@@ -240,6 +240,9 @@ struct DoseCurve: View {
             }
             .frame(height: height)
 
+            Text("横轴：时间 · 纵轴：相对浓度（倍）")
+                .font(.system(size: 10)).foregroundStyle(YS.dim)
+
             HStack(alignment: .top, spacing: 2) {
                 axisLabel(range.lowerBound, alignment: .leading)
                 Spacer(minLength: 0)
@@ -430,7 +433,7 @@ struct DoseCurve: View {
                     p.addLine(to: CGPoint(x: nowX, y: h - 5))
                 }
                 .stroke(Color.white.opacity(0.55), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                if inspectionDate.map({ abs(x($0) - nowX) > 48 }) ?? true {
+                if inspectionDate == nil {
                     Text("现在").font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(YS.text)
                         .position(x: min(w - 18, max(18, nowX)), y: 7)
@@ -443,15 +446,39 @@ struct DoseCurve: View {
 
             if let selected = inspectionDate {
                 let selectedX = x(selected)
-                let selectedY = y(model.level(at: selected))
+                let selectedLevel = model.level(at: selected)
+                let selectedY = y(selectedLevel)
+                let badgeWidth = min(156, max(1, w - 10))
                 Path { p in
-                    p.move(to: CGPoint(x: selectedX, y: 18))
+                    p.move(to: CGPoint(x: selectedX, y: 25))
                     p.addLine(to: CGPoint(x: selectedX, y: h - 5))
                 }
                 .stroke(YS.teal, lineWidth: 1.5)
-                Text(Fmt.hm(selected)).font(.system(size: 10, weight: .semibold)).monospacedDigit()
+                Path { p in
+                    p.move(to: CGPoint(x: 5, y: selectedY))
+                    p.addLine(to: CGPoint(x: w - 5, y: selectedY))
+                }
+                .stroke(YS.teal.opacity(0.7), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                Text("\(Fmt.hm(selected)) · \(DoseCurveModel.levelText(selectedLevel))")
+                    .font(.system(size: 12, weight: .bold)).monospacedDigit()
                     .foregroundStyle(YS.teal)
-                    .position(x: min(w - 22, max(22, selectedX)), y: 7)
+                    .lineLimit(1).minimumScaleFactor(0.75)
+                    .frame(width: badgeWidth, height: 23)
+                    .background(YS.card2, in: Capsule())
+                    .overlay(Capsule().stroke(YS.teal.opacity(0.5), lineWidth: 1))
+                    .position(x: min(w - 5 - badgeWidth / 2, max(5 + badgeWidth / 2, selectedX)), y: 12)
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("curveSelectedCoordinates")
+                Text(DoseCurveModel.levelText(selectedLevel))
+                    .font(.system(size: 10, weight: .semibold)).monospacedDigit()
+                    .foregroundStyle(YS.teal)
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(YS.card2, in: RoundedRectangle(cornerRadius: 4))
+                    .fixedSize()
+                    .position(x: selectedX < w / 2 ? w - 38 : 38,
+                              y: min(h - 13, max(35, selectedY)))
+                    .allowsHitTesting(false)
+                    .accessibilityIdentifier("curveSelectedLevel")
                 Circle().fill(YS.card).frame(width: 13, height: 13)
                     .position(x: selectedX, y: selectedY)
                 Circle().fill(YS.teal).frame(width: 9, height: 9)
@@ -504,6 +531,7 @@ struct DoseCurve: View {
 
             ForEach(visibleNotes) { note in
                 let markerY = annotationY(for: note, in: visibleNotes, width: w, range: range)
+                    + (inspectionDate == nil ? 0 : 18)
                 let pointY = y(model.level(at: note.at))
                 Path { p in
                     p.move(to: CGPoint(x: x(note.at), y: markerY + 9))

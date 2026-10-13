@@ -154,7 +154,7 @@ struct TodayView: View {
                                                    curve: store.settings.plasmaCurve)
                         Divider().overlay(YS.line).padding(.vertical, 2)
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text("相对浓度 · 模型估算").font(.system(size: 12)).foregroundStyle(YS.dim)
+                            Text("现在相对浓度 · 模型估算").font(.system(size: 12)).foregroundStyle(YS.dim)
                             Spacer(minLength: 4)
                             Text(DoseCurveModel.levelText(curve.currentLevel))
                                 .font(.system(size: 20, weight: .bold, design: .rounded))

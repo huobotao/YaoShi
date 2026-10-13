@@ -1,7 +1,7 @@
 {
   "app": {
-    "version": "2.7",
-    "build": "24"
+    "version": "2.7.1",
+    "build": "25"
   },
   "partner": {
     "version": "1.1",
