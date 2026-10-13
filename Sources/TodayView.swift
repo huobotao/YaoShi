@@ -152,6 +152,8 @@ struct TodayView: View {
                         }
 
                         // 数字和曲线共享同一时刻、同一份模型结果。
+                        let episode = DoseEpisode(doses: store.doses, selection: store.doseEpisode, now: ctx.date,
+                                                  newRoundGapHours: store.settings.newRoundGapHours)
                         let curve = DoseCurveModel(doses: store.doses, now: ctx.date,
                                                    curve: store.settings.plasmaCurve)
                         Divider().overlay(YS.line).padding(.vertical, 2)
@@ -166,6 +168,7 @@ struct TodayView: View {
                         DoseCurve(model: curve, phase: phase,
                                   annotations: store.effects.filter { !$0.note.isEmpty },
                                   lifeEvents: store.lifeEvents,
+                                  episode: episode,
                                   onExpand: { showCurveAnalysis = true },
                                   onEditNote: { editingNote = $0 })
                         if let low = st.plasmaLowAt, low > ctx.date {

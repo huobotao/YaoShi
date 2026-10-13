@@ -68,6 +68,11 @@ struct YaoShiApp: App {
 
     init() {
         let store = Store()
+        // Explicit maintenance only; ordinary launches do not rewrite dose history.
+        if let requested = ProcessInfo.processInfo.environment["YAOSHI_CORRECT_40MG_IDS"] {
+            let ids = Set(requested.split(separator: ",").compactMap { UUID(uuidString: String($0)) })
+            if !ids.isEmpty { _ = store.correctLegacy40mgDoses(ids: ids) }
+        }
         _store = StateObject(wrappedValue: store)
         PhoneWatchLink.shared.start(store: store)
     }
@@ -93,6 +98,15 @@ struct YaoShiApp: App {
                             await MedicationShareRepository.shared.sync()
                         }
                         try? await Task.sleep(nanoseconds: 15_000_000_000)
+                    }
+                }
+                .task(id: phase) {
+                    guard phase == .active else { return }
+                    while !Task.isCancelled {
+                        do { try await Task.sleep(nanoseconds: 60_000_000_000) }
+                        catch { return }
+                        guard !Task.isCancelled, phase == .active else { return }
+                        store.publish()
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(

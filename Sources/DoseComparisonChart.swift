@@ -4,6 +4,8 @@ struct DoseComparisonChart: View {
     var model: DoseComparisonModel
     var height: CGFloat = 176
     var onAssumedAtChange: ((Date) -> Void)?
+    var selectedTime: Date?
+    var onSelectedTimeChange: ((Date) -> Void)?
 
     private enum Interaction: String, CaseIterable {
         case inspect = "查数值", pan = "移动时间", assumed = "移动模拟时间"
@@ -19,10 +21,13 @@ struct DoseComparisonChart: View {
     @State private var isPinching = false
 
     init(model: DoseComparisonModel, height: CGFloat = 176,
-         onAssumedAtChange: ((Date) -> Void)? = nil) {
+         onAssumedAtChange: ((Date) -> Void)? = nil,
+         selectedTime: Date? = nil, onSelectedTimeChange: ((Date) -> Void)? = nil) {
         self.model = model
         self.height = height
         self.onAssumedAtChange = onAssumedAtChange
+        self.selectedTime = selectedTime
+        self.onSelectedTimeChange = onSelectedTimeChange
         let span = max(60, model.end.timeIntervalSince(model.start))
         _center = State(initialValue: model.start.addingTimeInterval(span / 2))
         _duration = State(initialValue: span)
@@ -88,6 +93,18 @@ struct DoseComparisonChart: View {
                 .font(.system(size: 10)).foregroundStyle(YS.dim)
             Text("统一纵轴 · 白色虚线为现在，橙色线为模拟服药；短竖线为实际记录。非实测血药浓度。")
                 .font(.system(size: 10)).foregroundStyle(YS.dim)
+        }
+        .onAppear {
+            if let selectedTime {
+                selectedDate = selectedTime
+                if !visibleRange.contains(selectedTime) { center = selectedTime }
+            }
+        }
+        .onChange(of: selected) { _, value in onSelectedTimeChange?(value) }
+        .onChange(of: selectedTime) { _, value in
+            guard let value, value != selected else { return }
+            selectedDate = value
+            if !visibleRange.contains(value) { center = value }
         }
     }
 
@@ -211,6 +228,7 @@ struct DoseComparisonChart: View {
                             let next = start.addingTimeInterval(offset)
                             if next.timeIntervalSinceReferenceDate.isFinite {
                                 center = Date(timeIntervalSinceReferenceDate: CurveTimeViewport.boundedOffset(next.timeIntervalSinceReferenceDate))
+                                if onSelectedTimeChange != nil { selectedDate = center }
                             }
                         }
                         if state == .ended { dragStartCenter = nil }
@@ -245,7 +263,9 @@ struct DoseComparisonChart: View {
                     let delta = Double(direction) * max(60, duration / 20)
                     switch interaction {
                     case .inspect: selectedDate = selected.addingTimeInterval(delta)
-                    case .pan: center = center.addingTimeInterval(delta)
+                    case .pan:
+                        center = center.addingTimeInterval(delta)
+                        if onSelectedTimeChange != nil { selectedDate = center }
                     case .assumed: onAssumedAtChange?(max(model.now, model.assumedAt.addingTimeInterval(delta)))
                     }
                 },

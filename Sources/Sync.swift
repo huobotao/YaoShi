@@ -133,7 +133,7 @@ struct InventorySyncState: Codable, Hashable {
 
 /// 需要跟着走的设置项（每台机器改了都同步，取 updatedAt 新的）
 struct SyncedSettings: Codable, Hashable {
-    var defaultMg: Int = 40
+    var defaultMg: Int = 50
     /// nil 表示旧数据尚未设置，按 48 小时兼容；设置会随其他设置一并同步。
     var newRoundGapHoursOverride: Int? = nil
     /// 右苯丙胺血浆曲线参数，单位为 0.1 小时。nil 使用说明书参考值。

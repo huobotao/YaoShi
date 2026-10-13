@@ -64,8 +64,9 @@ struct Provider: TimelineProvider {
 
 private func stack(_ snap: SharedSnapshot?) -> [Dose] {
     guard let snap else { return [] }
-    let ds = snap.doses
-    if !ds.isEmpty { return ds }
+    // An explicit empty array means records were cleared; only legacy snapshots
+    // without the array may reconstruct a last dose.
+    if let ticks = snap.recentDoses { return ticks.map(\.asDose) }
     guard let last = snap.status.lastDoseAt else { return [] }
     return [Dose(at: last, mg: snap.status.lastMg)]
 }
@@ -418,7 +419,7 @@ struct DoseLiveActivity: Widget {
                     Spacer(minLength: 0)
                 }.font(.system(size: 10)).foregroundStyle(W.dim)
             }
-            Text(stale ? "\(Fmt2.hm(st.refreshedAt)) 时估算 · 打开药时刷新" : "1× = 单次 40 mg 模型峰值")
+            Text(stale ? "\(Fmt2.hm(st.refreshedAt)) 时估算 · 打开药时刷新" : "1× = 单次 50 mg 模型峰值")
                 .font(.system(size: 9)).foregroundStyle(W.dim)
         }
     }

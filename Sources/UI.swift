@@ -155,8 +155,11 @@ struct DoseCurve: View {
     var annotations: [EffectLog] = []
     var lifeEvents: [LifeEvent] = []
     var expanded: Bool = false
+    var episode: DoseEpisode? = nil
     var onExpand: (() -> Void)? = nil
     var onEditNote: ((EffectLog) -> Void)? = nil
+    var selectedTime: Date? = nil
+    var onSelectedTimeChange: ((Date) -> Void)? = nil
 
     @State private var zoomScale = 1.0
     @State private var centerOffsetSeconds = 0.0
@@ -169,7 +172,7 @@ struct DoseCurve: View {
     @State private var selectedAnnotationID: UUID?
 
     // The initial window stays near now; the viewport can travel beyond it in either direction.
-    private var baseStart: Date { model.start }
+    private var baseStart: Date { episode?.start?.at.addingTimeInterval(-3600) ?? model.start }
     private var baseEnd: Date { model.end }
     private var baseDuration: Double { max(60, baseEnd.timeIntervalSince(baseStart)) }
     private var maximumZoom: Double { baseDuration / CurveTimeViewport.minimumDuration }
@@ -182,6 +185,54 @@ struct DoseCurve: View {
     private var visibleRange: ClosedRange<Date> {
         CurveTimeViewport.range(baseStart: baseStart, baseEnd: baseEnd,
                                 zoom: resolvedZoom, offset: centerOffsetSeconds)
+    }
+
+    private var numberedDoses: [Dose] {
+        episode?.doses ?? model.historyDoses.filter { $0.id != model.hypotheticalDoseID }.sorted {
+            $0.at == $1.at ? $0.id.uuidString < $1.id.uuidString : $0.at < $1.at
+        }
+    }
+
+    private var doseTimeline: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(episode == nil ? "服药时间与间隔" : "这一轮 · 服药时间与间隔")
+                .font(.system(size: 13, weight: .semibold)).foregroundStyle(YS.text)
+            if numberedDoses.isEmpty {
+                Text("尚未选择这一轮起点，可在首页的首次服药卡片中选择。")
+                    .font(.system(size: 12)).foregroundStyle(YS.dim)
+            }
+            ForEach(Array(numberedDoses.enumerated()), id: \.element.id) { index, dose in
+                Button {
+                    selectedDate = dose.at
+                    let center = visibleRange.lowerBound.addingTimeInterval(visibleDuration / 2)
+                    if !visibleRange.contains(dose.at) {
+                        centerOffsetSeconds += dose.at.timeIntervalSince(center)
+                    }
+                } label: {
+                    HStack(alignment: .top, spacing: 10) {
+                        Text("\(index + 1)")
+                            .font(.system(size: 11, weight: .bold)).monospacedDigit()
+                            .frame(minWidth: 24, minHeight: 24)
+                            .background(YS.teal.opacity(0.16), in: Circle())
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("第 \(index + 1) 次 · \(Fmt.mdhm(dose.at))")
+                                .foregroundStyle(YS.text)
+                            Text(index == 0 ? (episode == nil ? "首条记录" : "这一轮首次服药")
+                                 : "距上次 \(Fmt.gap(dose.at.timeIntervalSince(numberedDoses[index - 1].at)))")
+                                .foregroundStyle(YS.teal)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .font(.system(size: 12, weight: .medium)).monospacedDigit()
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("curveDoseRow-\(index + 1)")
+            }
+        }
+        .padding(12)
+        .background(YS.card2, in: RoundedRectangle(cornerRadius: 12))
     }
 
     private var selectedAnnotation: EffectLog? {
@@ -242,6 +293,7 @@ struct DoseCurve: View {
                 Spacer(minLength: 0)
                 axisLabel(range.upperBound, alignment: .trailing)
             }
+            doseTimeline
             HStack(spacing: 4) {
                 if !annotations.isEmpty {
                     Image(systemName: "text.bubble.fill").foregroundStyle(YS.amber)
@@ -261,12 +313,29 @@ struct DoseCurve: View {
                 Text("淡紫背景＝已配对的睡觉与醒来记录。")
                     .font(.system(size: 10)).foregroundStyle(YS.dim)
             }
-            Text("1.0 = 单次 40 毫克模型峰值；非实测血药浓度。")
+            Text("1.0 = 单次 50 毫克模型峰值；非实测血药浓度。")
                 .font(.system(size: 10)).foregroundStyle(YS.dim)
             Text(model.hypotheticalDoseID == nil
-                 ? "短竖线＝服药记录；现在右侧虚线＝未来估算。"
+                 ? "圆点＝实际服药时刻；编号对应下方明细，点击明细可定位。现在右侧虚线＝未来估算。"
                  : "橙色竖线＝假设这一剂；现在右侧虚线＝未来估算。")
                 .font(.system(size: 10)).foregroundStyle(YS.dim)
+        }
+        .onAppear {
+            if let selectedTime { selectExternalTime(selectedTime) }
+        }
+        .onChange(of: inspectionDate) { _, value in
+            onSelectedTimeChange?(value ?? model.now)
+        }
+        .onChange(of: selectedTime) { _, value in
+            guard let value, value != inspectionDate else { return }
+            selectExternalTime(value)
+        }
+    }
+
+    private func selectExternalTime(_ value: Date) {
+        selectedDate = value
+        if !visibleRange.contains(value) {
+            centerOffsetSeconds = value.timeIntervalSince(baseCenter)
         }
     }
 
@@ -317,7 +386,7 @@ struct DoseCurve: View {
     private func resetZoom() {
         zoomScale = 1
         centerOffsetSeconds = 0
-        selectedDate = nil
+        selectedDate = onSelectedTimeChange == nil ? nil : model.now
         isMovingTime = false
     }
 
@@ -367,6 +436,9 @@ struct DoseCurve: View {
         let currentY = y(model.currentLevel)
         let baselineY = y(1)
         let visibleDoses = model.historyDoses.filter { $0.at >= range.lowerBound && $0.at <= range.upperBound }
+        let visibleNumbered = numberedDoses.filter { range.contains($0.at) }
+        let badgeColumns = max(1, Int((w - 10) / 28))
+        let badgeCount = min(badgeColumns, visibleNumbered.count)
         let visibleNotes = annotations.filter { !$0.note.isEmpty && $0.at >= range.lowerBound && $0.at <= range.upperBound }
         let sleepIntervals = LifeTimeline(events: lifeEvents, now: model.now).sleeps.filter {
             $0.wake.at > range.lowerBound && $0.sleep.at < range.upperBound
@@ -413,11 +485,33 @@ struct DoseCurve: View {
                 .stroke(YS.color(phase).opacity(0.8), style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [4, 3]))
 
             ForEach(visibleDoses) { dose in
+                let markerColor = dose.id == model.hypotheticalDoseID ? YS.amber : YS.teal
+                let pointY = y(model.level(at: dose.at))
                 Path { p in
                     p.move(to: CGPoint(x: x(dose.at), y: h - 5))
-                    p.addLine(to: CGPoint(x: x(dose.at), y: h - 23))
+                    p.addLine(to: CGPoint(x: x(dose.at), y: pointY))
                 }
-                .stroke(dose.id == model.hypotheticalDoseID ? YS.amber : YS.dim.opacity(0.7), lineWidth: 2)
+                .stroke(markerColor.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [2, 3]))
+                Circle().fill(markerColor).frame(width: 7, height: 7)
+                    .overlay(Circle().stroke(YS.card, lineWidth: 1))
+                    .position(x: x(dose.at), y: pointY)
+                if let index = numberedDoses.firstIndex(where: { $0.id == dose.id }),
+                   let visibleIndex = visibleNumbered.firstIndex(where: { $0.id == dose.id }) {
+                    let badgeX = 5 + (w - 10) * (CGFloat(visibleIndex % badgeColumns) + 0.5) / CGFloat(max(1, badgeCount))
+                    let badgeY = CGFloat(29 + (visibleIndex / badgeColumns) * 20)
+                    Path { p in
+                        p.move(to: CGPoint(x: badgeX, y: badgeY + 9))
+                        p.addLine(to: CGPoint(x: x(dose.at), y: pointY))
+                    }
+                    .stroke(markerColor.opacity(0.3), lineWidth: 0.7)
+                    Text("\(index + 1)")
+                        .font(.system(size: 9, weight: .bold)).monospacedDigit()
+                        .foregroundStyle(markerColor)
+                        .frame(width: 20, height: 18)
+                        .background(YS.card2, in: Capsule())
+                        .position(x: badgeX, y: badgeY)
+                        .allowsHitTesting(false)
+                }
             }
             if nowIsVisible {
                 Path { p in
@@ -487,6 +581,9 @@ struct DoseCurve: View {
                         }
                         let shift = -Double(translation / max(1, w - 10)) * visibleDuration
                         centerOffsetSeconds = CurveTimeViewport.boundedOffset(dragStartOffset + shift)
+                        if onSelectedTimeChange != nil {
+                            selectedDate = baseCenter.addingTimeInterval(centerOffsetSeconds)
+                        }
                     } else {
                         selectedDate = date(at: point.x, width: w, in: visibleRange)
                     }

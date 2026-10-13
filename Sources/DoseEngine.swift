@@ -237,7 +237,7 @@ enum DoseEngine {
         return nil
     }
 
-    /// 单片在服药后 t 小时的体内药量，1.0 = 单片 40 毫克的峰值
+    /// 单片在服药后 t 小时的体内药量，1.0 = 单片 50 毫克的峰值
     static func plasmaLevel(hoursSinceDose t: Double, food: FoodState = .unknown,
                             curve: PlasmaCurveConfiguration = .standard) -> Double {
         let lg = curve.lag(for: food)
@@ -246,15 +246,15 @@ enum DoseEngine {
         return max(0, curve.curveShape(x) / curve.peakLevel)
     }
 
-    /// 剂量权重，以 40 毫克为基准 1.0。
+    /// 剂量权重，以 50 毫克为基准 1.0。
     /// 体内药量与剂量基本成正比（实测 log-log 斜率 1.02–1.11），所以这里就用线性。
     static func doseWeight(_ mg: Int) -> Double {
         guard mg > 0 else { return 0 }
-        return Double(mg) / 40.0
+        return Double(mg) / 50.0
     }
 
     /// 某一时刻的体内总药量：把还有残留的每一片相加。
-    /// 1.0 = 平时吃一片 40 毫克时的最高水平；两片叠在一起可以超过 1。
+    /// 1.0 = 平时吃一片 50 毫克时的最高水平；两片叠在一起可以超过 1。
     static func totalPlasma(_ doses: [Dose], at now: Date,
                             curve: PlasmaCurveConfiguration = .standard) -> Double {
         var sum = 0.0
@@ -346,7 +346,7 @@ struct DoseStatus: Codable, Hashable {
     var phase: DosePhase
     var level: Double            // 最近一次服药的药效强度 0…1（感受层，只按最后一片算）
     var remaining: Double = 0    // 0…1，最近一次的剩余有效时间比例（进度条用）
-    /// 体内总药量，1.0 = 平时一片 40 毫克的最高水平；多片叠加可超过 1
+    /// 体内总药量，1.0 = 平时一片 50 毫克的最高水平；多片叠加可超过 1
     var plasmaTotal: Double? = nil
     /// 此刻还有几片在体内留着（药量贡献超过 0.02 的）
     var activeCount: Int? = nil

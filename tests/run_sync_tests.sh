@@ -48,3 +48,8 @@ xcrun swiftc -parse-as-library \
   "$ROOT/Shared/TV/TVPairing.swift" "$ROOT/Shared/TV/TVCurveSnapshot.swift" \
   "$ROOT/tests/TVPairingTests.swift" -o "$TEST_BUILD/tv-pairing-tests"
 "$TEST_BUILD/tv-pairing-tests"
+
+xcrun swiftc -parse-as-library \
+  "$ROOT/Sources/Models.swift" "$ROOT/Sources/DoseAverageModel.swift" \
+  "$ROOT/tests/DoseAverageTests.swift" -o "$TEST_BUILD/average-tests"
+"$TEST_BUILD/average-tests"

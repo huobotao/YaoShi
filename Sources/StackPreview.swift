@@ -5,6 +5,7 @@ struct StackPreview: View {
     @EnvironmentObject var store: Store
     @Environment(\.dismiss) private var dismiss
     @State private var pillCount = 1
+    @State private var statisticsTime = Date()
     @State private var simulationDate = Date()
     @State private var assumedOffset: TimeInterval = 0
 
@@ -94,7 +95,15 @@ struct StackPreview: View {
         ]
         return VStack(spacing: 14) {
             Card {
-                DoseComparisonChart(model: model, onAssumedAtChange: setAssumedAt)
+                DoseComparisonChart(model: model, onAssumedAtChange: setAssumedAt,
+                                    selectedTime: statisticsTime,
+                                    onSelectedTimeChange: { statisticsTime = $0 })
+            }
+            Card {
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    DoseAveragePanel(doses: store.doses, mgPerPill: store.settings.defaultMg,
+                                     now: context.date, anchor: $statisticsTime)
+                }
             }
             Card(title: "同一时刻的模型估算") {
                 VStack(spacing: 11) {
@@ -124,7 +133,7 @@ struct StackPreview: View {
                         .font(.system(size: 12, weight: .medium)).monospacedDigit()
                         if label != "服药后 12h" { Divider().overlay(YS.line) }
                     }
-                    Text("1.0 倍为单次 40 毫克的模型峰值；数值不是实测血药浓度。")
+                    Text("1.0 倍为单次 50 毫克的模型峰值；数值不是实测血药浓度。")
                         .font(.system(size: 10)).foregroundStyle(YS.dim)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }

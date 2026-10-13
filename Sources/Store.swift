@@ -239,6 +239,48 @@ final class Store: ObservableObject {
 
     // MARK: - 服药记录
 
+    /// 用户明确指定的历史录入更正；不是所有 40 毫克记录的自动迁移。
+    /// 独立保存首次更正前的整包，不触发服药或伴侣消息，也不调整库存。
+    @discardableResult
+    func correctLegacy40mgDoses(ids: Set<UUID>) -> Bool {
+        var corrected = localPayload
+        let indexes = corrected.doses.indices.filter {
+            ids.contains(corrected.doses[$0].id) && corrected.doses[$0].med == "Vyvanse" && corrected.doses[$0].mg == 40
+        }
+        let changesSettings = corrected.settings?.defaultMg == 40
+        guard !indexes.isEmpty || changesSettings else { return true }
+
+        let backupURL = url("before-40-to-50-correction.json")
+        do {
+            if fm.fileExists(atPath: backupURL.path) {
+                // 已存在的原始备份永不覆盖；损坏时停止，不静默丢失回退依据。
+                _ = try JSONDecoder().decode(SyncPayload.self, from: Data(contentsOf: backupURL))
+            } else {
+                let data = try JSONEncoder().encode(localPayload)
+                try data.write(to: backupURL, options: .withoutOverwriting)
+                guard try Data(contentsOf: backupURL) == data else {
+                    fail("历史剂量更正：原始备份回读不符")
+                    return false
+                }
+            }
+        } catch {
+            fail("历史剂量更正：无法保留原始备份：\(error.localizedDescription)")
+            return false
+        }
+        // 保证比原记录更新，即使原设备时钟曾经偏快。
+        for index in indexes {
+            corrected.doses[index].mg = 50
+            corrected.doses[index].updatedAt = max(Date(), (corrected.doses[index].updatedAt ?? .distantPast).addingTimeInterval(1))
+        }
+        if changesSettings {
+            corrected.settings?.defaultMg = 50
+            corrected.settings?.updatedAt = max(Date(), (settings.updatedAt).addingTimeInterval(1))
+        }
+        guard apply(corrected) else { return false }
+        pushSoon()
+        return true
+    }
+
     /// 手动选择已发生的实记服药；不新增记录。自动间隔分波由 DoseEpisode 按设置计算。
     @discardableResult
     func selectDoseEpisode(startingAt doseID: UUID?, now: Date = Date()) -> Bool {

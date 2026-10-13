@@ -123,6 +123,60 @@ final class FakeKeychain: SyncKeychainAccess {
         let suite = "yaoshi-sync-tests-" + UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!
         defer { try? fm.removeItem(at: directory); defaults.removePersistentDomain(forName: suite) }
+        let correctionDirectory = directory.appendingPathComponent("strength-correction")
+        try fm.createDirectory(at: correctionDirectory, withIntermediateDirectories: true)
+        let correctionSuite = "yaoshi-correction-" + UUID().uuidString
+        let correctionDefaults = UserDefaults(suiteName: correctionSuite)!
+        defer { correctionDefaults.removePersistentDomain(forName: correctionSuite) }
+        var original = SyncPayload()
+        var correctionLegacyDose = doseA; correctionLegacyDose.note = "保留备注"; correctionLegacyDose.food = .withFood
+        var alreadyCorrect = doseB; alreadyCorrect.mg = 50
+        var otherDrug = Dose(at: timestamp, mg: 40); otherDrug.med = "Other"
+        let unselected = Dose(at: timestamp, mg: 40)
+        original.doses = [correctionLegacyDose, alreadyCorrect, otherDrug, unselected]
+        var oldSettings = SyncedSettings(); oldSettings.defaultMg = 40; oldSettings.updatedAt = timestamp
+        original.settings = oldSettings; original.supply = stock
+        original.tombstones["d:" + UUID().uuidString] = timestamp
+        try JSONEncoder().encode(original).write(to: correctionDirectory.appendingPathComponent("durable-state.json"))
+        let correctionStore = Store(directory: correctionDirectory, defaults: correctionDefaults, syncAutomatically: false)
+        let selectedIDs: Set<UUID> = [correctionLegacyDose.id, alreadyCorrect.id, otherDrug.id]
+        let correctionBlocker = correctionDirectory.appendingPathComponent("durable-state.json.tmp")
+        try fm.createDirectory(at: correctionBlocker, withIntermediateDirectories: true)
+        check(!correctionStore.correctLegacy40mgDoses(ids: selectedIDs), "failed correction checkpoint reports failure")
+        check(correctionStore.doses.first { $0.id == correctionLegacyDose.id }?.mg == 40 && correctionStore.settings.defaultMg == 40,
+              "failed correction checkpoint preserves visible dose and settings")
+        try? fm.removeItem(at: correctionBlocker)
+        check(correctionStore.correctLegacy40mgDoses(ids: selectedIDs), "explicit legacy correction persists")
+        let correctedDose = correctionStore.doses.first { $0.id == correctionLegacyDose.id }!
+        check(correctedDose.mg == 50 && correctedDose.at == correctionLegacyDose.at && correctedDose.note == correctionLegacyDose.note &&
+              correctedDose.food == correctionLegacyDose.food && correctedDose.updatedAt! > correctionLegacyDose.updatedAt!,
+              "correction preserves identity details and advances revision")
+        check(correctionStore.doses.first { $0.id == alreadyCorrect.id } == alreadyCorrect &&
+              correctionStore.doses.first { $0.id == otherDrug.id } == otherDrug &&
+              correctionStore.doses.first { $0.id == unselected.id } == unselected,
+              "correction preserves already-correct other-drug and unselected records")
+        check(correctionStore.settings.defaultMg == 50 && correctionStore.supply == stock && correctionStore.tombstones == original.tombstones,
+              "correction updates legacy default while preserving stock and deletions")
+        let originalBackupURL = correctionDirectory.appendingPathComponent("before-40-to-50-correction.json")
+        let originalBackupData = try Data(contentsOf: originalBackupURL)
+        let originalBackup = try JSONDecoder().decode(SyncPayload.self, from: originalBackupData)
+        check(originalBackup.doses.first { $0.id == correctionLegacyDose.id }?.mg == 40 && originalBackup.settings?.defaultMg == 40,
+              "independent backup preserves pre-correction dose and settings")
+        check(correctionStore.correctLegacy40mgDoses(ids: selectedIDs) &&
+              correctionStore.doses.first { $0.id == correctionLegacyDose.id } == correctedDose,
+              "repeated correction is idempotent")
+        let backupAfterRetry = try Data(contentsOf: originalBackupURL)
+        check(backupAfterRetry == originalBackupData, "original correction backup is never overwritten")
+        let correctionReload = Store(directory: correctionDirectory, defaults: correctionDefaults, syncAutomatically: false)
+        check(correctionReload.doses.first { $0.id == correctionLegacyDose.id } == correctedDose && correctionReload.settings.defaultMg == 50,
+              "historical correction survives restart")
+        let correctionCloud = FakeKeychain()
+        check(SyncStore.push(original, using: correctionCloud, account: "payload-v2-stale-strength").isOK,
+              "stale correction test snapshot publishes")
+        correctionReload.sync(using: correctionCloud)
+        check(correctionReload.doses.first { $0.id == correctionLegacyDose.id } == correctedDose && correctionReload.settings.defaultMg == 50,
+              "stale cloud snapshot cannot undo explicit correction")
+
         let store = Store(directory: directory, defaults: defaults, syncAutomatically: false)
         var supply = Supply(); supply.pillsLeft = 10; store.updateSupply(supply)
         let eventID = UUID()

@@ -31,7 +31,7 @@ struct DoseAttributes: ActivityAttributes {
         var skippedToday: Bool
         /// 还剩几粒
         var pillsLeft: Int
-        /// Model snapshot only; the activity hides it once stale.
+        /// Model snapshot only; stale values are explicitly labelled historical.
         var concentrationRatio: Double? = nil
         var predictedPeakAt: Date? = nil
         var refreshedAt: Date

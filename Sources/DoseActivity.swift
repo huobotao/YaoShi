@@ -21,10 +21,15 @@ enum DoseActivityController {
     }
 
     static func state(from snap: SharedSnapshot, now: Date = Date()) -> DoseAttributes.ContentState {
-        let doses = snap.doses.filter { $0.at <= now }
-        let fallback = snap.status.lastDoseAt.flatMap { $0 <= now ? Dose(at: $0, mg: snap.status.lastMg) : nil }
-        let history = doses.isEmpty ? fallback.map { [$0] } ?? [] : doses
-        let ratio = DoseEngine.totalPlasma(history, at: now, curve: snap.plasmaCurve)
+        let doses: [Dose]
+        if let ticks = snap.recentDoses {
+            doses = ticks.map(\.asDose)
+        } else if let last = snap.status.lastDoseAt {
+            doses = [Dose(at: last, mg: snap.status.lastMg)]
+        } else {
+            doses = []
+        }
+        let actual = doses.filter { $0.at <= now && $0.at.timeIntervalSinceReferenceDate.isFinite && $0.mg > 0 }
         return DoseAttributes.ContentState(
             lastDoseAt: snap.status.lastDoseAt,
             lastMg: snap.status.lastMg,
@@ -37,8 +42,8 @@ enum DoseActivityController {
             targetAt: snap.targetAt,
             skippedToday: snap.skippedToday,
             pillsLeft: snap.pillsLeft,
-            concentrationRatio: history.isEmpty ? nil : ratio,
-            predictedPeakAt: DoseEngine.nextLocalPlasmaPeak(doses: history, now: now, curve: snap.plasmaCurve),
+            concentrationRatio: actual.isEmpty ? nil : DoseEngine.totalPlasma(actual, at: now, curve: snap.plasmaCurve),
+            predictedPeakAt: DoseEngine.nextLocalPlasmaPeak(doses: actual, now: now, curve: snap.plasmaCurve),
             refreshedAt: now)
     }
 
@@ -52,21 +57,49 @@ enum DoseActivityController {
     }
 
     static func refresh(from snap: SharedSnapshot, settings: SyncedSettings) {
-        guard isSupported else { return }
+        guard isSupported else { report("notAuthorized"); return }
         guard settings.liveActivityEnabled else { endAll(); return }
         let now = Date()
         let st = state(from: snap, now: now)
         let content = ActivityContent(state: st, staleDate: nextStale(for: st, now: now))
         if let a = running {
-            Task { await a.update(content) }
+            Task { await a.update(content); report("updated") }
         } else {
             // 把结束了但还没被系统清掉的旧条目收干净，避免锁屏上出现两条
             for a in Activity<DoseAttributes>.activities {
                 Task { await a.end(nil, dismissalPolicy: .immediate) }
             }
             // 不在前台时 request 会抛错，这里静默忽略，下次进前台再来
-            _ = try? Activity.request(attributes: DoseAttributes(title: "药时"),
-                                      content: content, pushType: nil)
+            do {
+                _ = try Activity.request(attributes: DoseAttributes(title: "药时"),
+                                         content: content, pushType: nil)
+                report("started")
+            } catch {
+                report("requestFailed", error: String(describing: error))
+            }
+        }
+    }
+
+    /// Local diagnostics distinguish an installed build from an accepted ActivityKit update.
+    private static func report(_ action: String, error: String? = nil) {
+        guard let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        var report: [String: Any] = [
+            "action": action, "checkedAt": Date().timeIntervalSince1970,
+            "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
+            "activitiesEnabled": isSupported,
+            "activities": Activity<DoseAttributes>.activities.map { activity -> [String: Any] in
+                let state = activity.content.state
+                var item: [String: Any] = ["id": activity.id,
+                    "state": String(describing: activity.activityState),
+                    "refreshedAt": state.refreshedAt.timeIntervalSince1970]
+                if let value = state.concentrationRatio { item["concentrationRatio"] = value }
+                if let peak = state.predictedPeakAt { item["predictedPeakAt"] = peak.timeIntervalSince1970 }
+                return item
+            }
+        ]
+        if let error { report["error"] = error }
+        if let data = try? JSONSerialization.data(withJSONObject: report, options: [.sortedKeys]) {
+            try? data.write(to: directory.appendingPathComponent("live-activity-status.json"), options: .atomic)
         }
     }
 

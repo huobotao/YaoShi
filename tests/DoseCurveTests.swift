@@ -9,23 +9,26 @@ import Foundation
     static func close(_ a: Double, _ b: Double, tolerance: Double = 1e-12) -> Bool { abs(a - b) < tolerance }
 
     static func main() {
+        check(close(DoseEngine.doseWeight(50), 1), "50 mg is the single-pill reference")
+        check(close(DoseEngine.doseWeight(100), 2), "100 mg preserves two-pill scaling")
+        check(close(DoseEngine.doseWeight(40), 0.8), "explicit 40 mg remains a valid non-reference dose")
         let iso = ISO8601DateFormatter()
         let now = iso.date(from: "2026-09-23T07:12:00+10:00")!
-        let peakDose = Dose(at: now.addingTimeInterval(-3600), mg: 40)
+        let peakDose = Dose(at: now.addingTimeInterval(-3600), mg: 50)
         let localPeak = DoseEngine.nextLocalPlasmaPeak(doses: [peakDose], now: now, curve: .standard)!
         check(abs(localPeak.timeIntervalSince(peakDose.at) - 3.8 * 3600) <= 60,
               "single rising dose next local peak agrees with analytical 3.8h peak")
         check(DoseEngine.nextLocalPlasmaPeak(doses: [peakDose], now: now.addingTimeInterval(5 * 3600), curve: .standard) == nil,
               "falling concentration does not report now or a global maximum as a future peak")
-        let overlap = [Dose(at: now.addingTimeInterval(-5 * 3600), mg: 40), peakDose]
+        let overlap = [Dose(at: now.addingTimeInterval(-5 * 3600), mg: 50), peakDose]
         let overlapPeak = DoseEngine.nextLocalPlasmaPeak(doses: overlap, now: now, curve: .standard)!
         let overlapValue = DoseEngine.totalPlasma(overlap, at: overlapPeak)
         check(overlapValue >= DoseEngine.totalPlasma(overlap, at: overlapPeak.addingTimeInterval(-60)) &&
               overlapValue >= DoseEngine.totalPlasma(overlap, at: overlapPeak.addingTimeInterval(60)),
               "overlapping doses report a local maximum of the summed curve")
         check(overlapPeak < localPeak, "decaying earlier dose shifts the combined peak earlier")
-        let first = Dose(at: iso.date(from: "2026-09-21T08:00:00+10:00")!, mg: 40)
-        let second = Dose(at: iso.date(from: "2026-09-21T16:26:00+10:00")!, mg: 40)
+        let first = Dose(at: iso.date(from: "2026-09-21T08:00:00+10:00")!, mg: 50)
+        let second = Dose(at: iso.date(from: "2026-09-21T16:26:00+10:00")!, mg: 50)
         let doses = [first, second]
         let curve = DoseCurveModel(doses: doses, now: now)
         check(curve.start < now && now < curve.end, "screenshot now is strictly inside the chart")
@@ -62,7 +65,7 @@ import Foundation
               DoseEngine.plasmaLevel(hoursSinceDose: .infinity) == 0,
               "very old and non-finite times do not overflow")
 
-        let trial = Dose(at: now, mg: 40)
+        let trial = Dose(at: now, mg: 50)
         let hypothetical = doses + [trial]
         let preview = DoseCurveModel(doses: hypothetical, now: now, hypotheticalDoseID: trial.id)
         check(preview.visibleDoses.contains(where: { $0.id == trial.id }), "trial dose marker remains in view")
@@ -84,12 +87,12 @@ import Foundation
         check(empty.start < now && empty.end > now && empty.currentLevel == 0,
               "empty records produce a valid zero-valued window")
         check(empty.samples.allSatisfy { $0.level == 0 && $0.level.isFinite }, "empty samples are finite")
-        let future = Dose(at: now.addingTimeInterval(365 * 24 * 3600), mg: 40)
+        let future = Dose(at: now.addingTimeInterval(365 * 24 * 3600), mg: 50)
         let withFuture = DoseCurveModel(doses: doses + [future], now: now)
         check(withFuture.start == curve.start && withFuture.end == curve.end &&
               withFuture.samples.map(\.level) == curve.samples.map(\.level),
               "misdated future records do not stretch or change current predictions")
-        let withFood = Dose(at: now, mg: 40, food: .withFood)
+        let withFood = Dose(at: now, mg: 50, food: .withFood)
         let fed = DoseCurveModel(doses: [withFood], now: now)
         check(fed.samples.contains { $0.at == now.addingTimeInterval(1.4 * 3600) && $0.level < 1e-10 },
               "food-related absorption delay is preserved")
@@ -122,7 +125,7 @@ import Foundation
             check(close(shifted.lowerBound.timeIntervalSince(curve.start), offset),
                   "panning one year in either direction has no initial-window clamp")
         }
-        let oldest = Dose(at: now.addingTimeInterval(-365 * 24 * 3600), mg: 80)
+        let oldest = Dose(at: now.addingTimeInterval(-365 * 24 * 3600), mg: 100)
         let fullHistory = DoseCurveModel(doses: doses + [oldest], now: now)
         let oldPeakDate = oldest.at.addingTimeInterval(3.8 * 3600)
         let oldRange = oldest.at.addingTimeInterval(-3600)...oldest.at.addingTimeInterval(24 * 3600)

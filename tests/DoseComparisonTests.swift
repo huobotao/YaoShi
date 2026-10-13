@@ -10,12 +10,12 @@ import Foundation
 
     static func main() {
         let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
-        let historical = Dose(at: now.addingTimeInterval(-30 * 24 * 3600), mg: 40)
+        let historical = Dose(at: now.addingTimeInterval(-30 * 24 * 3600), mg: 50)
         let recent = Dose(at: now.addingTimeInterval(-2 * 3600), mg: 50)
         let records = [historical, recent]
         let original = records
         let scheduled = now.addingTimeInterval(48 * 3600)
-        let model = DoseComparisonModel(doses: records, mg: 40, now: now, assumedAt: scheduled)
+        let model = DoseComparisonModel(doses: records, mg: 50, now: now, assumedAt: scheduled)
         check(model.assumedAt == scheduled && model.now == now, "hypothetical time differs from reference now")
         check(model.end >= scheduled.addingTimeInterval(12 * 3600), "initial domain includes hypothetical future tail")
         check(model.actualDoses == original && records == original, "simulation leaves actual records unchanged")
@@ -25,8 +25,8 @@ import Foundation
         }
         let peakDate = scheduled.addingTimeInterval(PlasmaCurveConfiguration.standard.peakTimeHours * 3600)
         let peak = model.levels(at: peakDate)
-        check(close(peak.withDose - peak.withoutDose, 1), "40 mg contribution peaks at shifted dose time")
-        let originalTimeModel = DoseComparisonModel(doses: records, mg: 40, now: now)
+        check(close(peak.withDose - peak.withoutDose, 1), "50 mg contribution peaks at shifted dose time")
+        let originalTimeModel = DoseComparisonModel(doses: records, mg: 50, now: now)
         let originalPeak = originalTimeModel.levels(at: now.addingTimeInterval(3.8 * 3600))
         check(close(originalPeak.withDose - originalPeak.withoutDose, peak.withDose - peak.withoutDose), "moving hypothetical time preserves its peak magnitude")
         check(model.levels(after: 2 * 3600).withDose == model.levels(at: now.addingTimeInterval(2 * 3600)).withDose, "relative inspection remains anchored to now")
@@ -52,7 +52,7 @@ import Foundation
         let future = model.samples(in: futureRange)
         check(future.first?.at == futureRange.lowerBound && future.last?.at == futureRange.upperBound, "future resampling is not clamped to preview range")
         check(future.allSatisfy { $0.withDose.isFinite && $0.withoutDose.isFinite }, "distant future samples remain finite")
-        let distantModel = DoseComparisonModel(doses: records, mg: 40, now: now, assumedAt: distant)
+        let distantModel = DoseComparisonModel(doses: records, mg: 50, now: now, assumedAt: distant)
         check(close(distantModel.levels(at: distant.addingTimeInterval(3.8 * 3600)).withDose, 1), "hypothetical dose can move a year into future")
         let custom = PlasmaCurveConfiguration(peakTimeHours: 4.5, halfLifeHours: 12)
         let configured = DoseComparisonModel(doses: records, mg: 50, now: now, assumedAt: scheduled, curve: custom)
@@ -61,10 +61,10 @@ import Foundation
             close(sample.withoutDose, DoseEngine.totalPlasma(records, at: sample.at, curve: custom)) &&
             close(sample.withDose, DoseEngine.totalPlasma(records + [configured.assumedDose], at: sample.at, curve: custom))
         }, "comparison respects existing physical configuration at every sample")
-        let clamped = DoseComparisonModel(doses: records, mg: 40, now: now, assumedAt: now.addingTimeInterval(-3600))
+        let clamped = DoseComparisonModel(doses: records, mg: 50, now: now, assumedAt: now.addingTimeInterval(-3600))
         check(clamped.assumedAt == now, "hypothetical edits cannot silently rewrite the past")
-        let futureRecord = Dose(at: distant, mg: 40)
-        check(DoseComparisonModel(doses: records + [futureRecord], mg: 40, now: now).actualDoses == records, "misdated future actual records do not contaminate predictions")
+        let futureRecord = Dose(at: distant, mg: 50)
+        check(DoseComparisonModel(doses: records + [futureRecord], mg: 50, now: now).actualDoses == records, "misdated future actual records do not contaminate predictions")
         print("PASS: \(passed) comparison simulation regression checks")
     }
 }

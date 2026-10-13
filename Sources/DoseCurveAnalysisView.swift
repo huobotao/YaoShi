@@ -6,6 +6,7 @@ struct DoseCurveAnalysisView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var editingNote: EffectLog?
     @State private var forceLandscape = false
+    @State private var statisticsTime = Date()
 
     private var notes: [EffectLog] {
         store.effects.filter { !$0.note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -16,6 +17,8 @@ struct DoseCurveAnalysisView: View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             GeometryReader { geometry in
                 let now = context.date
+                let episode = DoseEpisode(doses: store.doses, selection: store.doseEpisode, now: now,
+                                          newRoundGapHours: store.settings.newRoundGapHours)
                 let model = DoseCurveModel(doses: store.doses, now: now,
                                            curve: store.settings.plasmaCurve)
                 let chartHeight = min(620, max(190, geometry.size.height * (geometry.size.width > geometry.size.height ? 0.42 : 0.52)))
@@ -23,6 +26,10 @@ struct DoseCurveAnalysisView: View {
                 NavigationStack {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 14) {
+                            Card {
+                                DoseAveragePanel(doses: store.doses, mgPerPill: store.settings.defaultMg,
+                                                 now: now, anchor: $statisticsTime)
+                            }
                             HStack(spacing: 7) {
                                 Image(systemName: "waveform.path")
                                     .foregroundStyle(YS.teal)
@@ -36,7 +43,10 @@ struct DoseCurveAnalysisView: View {
                                       annotations: notes,
                                       lifeEvents: store.lifeEvents,
                                       expanded: true,
-                                      onEditNote: { editingNote = $0 })
+                                      episode: episode,
+                                      onEditNote: { editingNote = $0 },
+                                      selectedTime: statisticsTime,
+                                      onSelectedTimeChange: { statisticsTime = $0 })
                             Text("曲线是通用参数下的相对浓度模型估算。橙色笔记标记按记录时刻定位；点击可阅读或编辑原笔记。")
                                 .font(.system(size: 12))
                                 .foregroundStyle(YS.dim)

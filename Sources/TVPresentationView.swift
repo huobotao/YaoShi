@@ -12,6 +12,8 @@ struct TVPresentationView: View {
     var body: some View {
         GeometryReader { geometry in
             TimelineView(.periodic(from: .now, by: 15)) { context in
+                let episode = DoseEpisode(doses: store.doses, selection: store.doseEpisode, now: context.date,
+                                          newRoundGapHours: store.settings.newRoundGapHours)
                 let model = DoseCurveModel(doses: store.doses, now: context.date,
                                            curve: store.settings.plasmaCurve)
                 VStack(spacing: 12) {
@@ -26,7 +28,7 @@ struct TVPresentationView: View {
                                 DoseCurve(model: model, phase: store.status.phase,
                                           height: max(170, geometry.size.height * 0.4),
                                           annotations: store.effects.filter { !$0.note.isEmpty },
-                                          lifeEvents: store.lifeEvents, expanded: true)
+                                          lifeEvents: store.lifeEvents, expanded: true, episode: episode)
                             }
                             .padding(18)
                             .background(YS.card, in: RoundedRectangle(cornerRadius: 24))
