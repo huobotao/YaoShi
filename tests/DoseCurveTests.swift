@@ -11,6 +11,19 @@ import Foundation
     static func main() {
         let iso = ISO8601DateFormatter()
         let now = iso.date(from: "2026-09-23T07:12:00+10:00")!
+        let peakDose = Dose(at: now.addingTimeInterval(-3600), mg: 40)
+        let localPeak = DoseEngine.nextLocalPlasmaPeak(doses: [peakDose], now: now, curve: .standard)!
+        check(abs(localPeak.timeIntervalSince(peakDose.at) - 3.8 * 3600) <= 60,
+              "single rising dose next local peak agrees with analytical 3.8h peak")
+        check(DoseEngine.nextLocalPlasmaPeak(doses: [peakDose], now: now.addingTimeInterval(5 * 3600), curve: .standard) == nil,
+              "falling concentration does not report now or a global maximum as a future peak")
+        let overlap = [Dose(at: now.addingTimeInterval(-5 * 3600), mg: 40), peakDose]
+        let overlapPeak = DoseEngine.nextLocalPlasmaPeak(doses: overlap, now: now, curve: .standard)!
+        let overlapValue = DoseEngine.totalPlasma(overlap, at: overlapPeak)
+        check(overlapValue >= DoseEngine.totalPlasma(overlap, at: overlapPeak.addingTimeInterval(-60)) &&
+              overlapValue >= DoseEngine.totalPlasma(overlap, at: overlapPeak.addingTimeInterval(60)),
+              "overlapping doses report a local maximum of the summed curve")
+        check(overlapPeak < localPeak, "decaying earlier dose shifts the combined peak earlier")
         let first = Dose(at: iso.date(from: "2026-09-21T08:00:00+10:00")!, mg: 40)
         let second = Dose(at: iso.date(from: "2026-09-21T16:26:00+10:00")!, mg: 40)
         let doses = [first, second]

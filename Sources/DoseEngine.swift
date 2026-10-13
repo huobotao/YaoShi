@@ -221,6 +221,22 @@ enum DoseEngine {
 
     static let plasmaLag = PlasmaCurveConfiguration.lagHours
 
+    /// First future local maximum after a rising segment, never a distant global maximum.
+    /// Minute resolution matches the estimate's displayed precision.
+    static func nextLocalPlasmaPeak(doses: [Dose], now: Date, curve: PlasmaCurveConfiguration) -> Date? {
+        guard !doses.isEmpty else { return nil }
+        var previous = DoseEngine.totalPlasma(doses, at: now, curve: curve)
+        var rising = false
+        for minute in 1...1440 {
+            let at = now.addingTimeInterval(Double(minute) * 60)
+            let value = DoseEngine.totalPlasma(doses, at: at, curve: curve)
+            if value > previous + 1e-9 { rising = true }
+            if rising && value < previous - 1e-9 { return at.addingTimeInterval(-60) }
+            previous = value
+        }
+        return nil
+    }
+
     /// 单片在服药后 t 小时的体内药量，1.0 = 单片 40 毫克的峰值
     static func plasmaLevel(hoursSinceDose t: Double, food: FoodState = .unknown,
                             curve: PlasmaCurveConfiguration = .standard) -> Double {

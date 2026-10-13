@@ -31,6 +31,9 @@ struct DoseAttributes: ActivityAttributes {
         var skippedToday: Bool
         /// 还剩几粒
         var pillsLeft: Int
+        /// Model snapshot only; the activity hides it once stale.
+        var concentrationRatio: Double? = nil
+        var predictedPeakAt: Date? = nil
         var refreshedAt: Date
 
         var phase: DosePhase { DosePhase(rawValue: phaseRaw) ?? .none }

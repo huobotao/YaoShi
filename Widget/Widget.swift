@@ -344,125 +344,98 @@ struct YaoShiWidget: Widget {
 
 @available(iOS 16.2, *)
 struct DoseLiveActivity: Widget {
+    private func ratio(_ st: DoseAttributes.ContentState, stale: Bool) -> String {
+        guard let value = st.concentrationRatio, value.isFinite else { return "—×" }
+        let number = value < 0.01 ? "<0.01×" : String(format: "%.2f×", value)
+        return (stale ? "旧" : "") + number
+    }
+
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: DoseAttributes.self) { context in
-            lockScreen(context.state)
+            summary(context.state, stale: context.isStale)
                 .padding(14)
                 .activityBackgroundTint(Color.black.opacity(0.55))
                 .activitySystemActionForegroundColor(W.teal)
         } dynamicIsland: { context in
             let st = context.state
-            let p = st.phase
+            let stale = context.isStale
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 4) {
-                            Image(systemName: p.symbol).font(.system(size: 11))
-                            Text(p.label).font(.system(size: 12, weight: .semibold))
-                        }
-                        .foregroundStyle(W.color(p))
-                        if st.lastMg > 0 { Text("\(st.lastMg) 毫克").font(.system(size: 10)).foregroundStyle(W.dim) }
+                        Text("相对浓度 · 估算").font(.system(size: 10)).foregroundStyle(W.dim)
+                        Text(ratio(st, stale: stale))
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                            .monospacedDigit().foregroundStyle(W.teal)
+                            .lineLimit(1).minimumScaleFactor(0.6)
                     }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    if let last = st.lastDoseAt {
-                        VStack(alignment: .trailing, spacing: 1) {
-                            Text(last, style: .timer)
-                                .font(.system(size: 19, weight: .bold, design: .rounded))
-                                .monospacedDigit().multilineTextAlignment(.trailing)
-                                .frame(maxWidth: 96)
-                                .foregroundStyle(W.color(p))
-                            Text("距上次服药").font(.system(size: 9)).foregroundStyle(W.dim)
-                        }
-                    } else {
-                        Text("还没记过").font(.system(size: 12))
-                    }
+                    peak(st, stale: stale)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        GeometryReader { g in
-                            ZStack(alignment: .leading) {
-                                Capsule().fill(Color.white.opacity(0.15))
-                                Capsule().fill(W.color(p))
-                                    .frame(width: g.size.width * CGFloat(min(1, max(0, st.remaining))))
-                            }
-                        }
-                        .frame(height: 5)
-                        HStack {
-                            Text(p.hint).font(.system(size: 10)).foregroundStyle(W.dim)
-                            Spacer()
-                            if let e = st.effectEndAt, p != .over, p != .none {
-                                Text("约 \(Fmt2.hm(e)) 退干净").font(.system(size: 10)).foregroundStyle(W.dim)
-                            }
-                        }
-                    }
+                    details(st, stale: stale)
                 }
             } compactLeading: {
-                Image(systemName: p.symbol).font(.system(size: 12)).foregroundStyle(W.color(p))
+                Image(systemName: "pills.fill").font(.system(size: 11)).foregroundStyle(W.teal)
             } compactTrailing: {
-                if let last = st.lastDoseAt {
-                    Text(last, style: .timer)
-                        .font(.system(size: 13, weight: .semibold)).monospacedDigit()
-                        .frame(maxWidth: 54).foregroundStyle(W.color(p))
-                } else {
-                    Text("—").font(.system(size: 13))
-                }
+                Text(ratio(st, stale: stale))
+                    .font(.system(size: 13, weight: .semibold)).monospacedDigit()
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                    .foregroundStyle(W.teal)
+                    .accessibilityLabel(stale ? "上次浓度估算 " + ratio(st, stale: true) : "估算相对浓度 " + ratio(st, stale: false))
             } minimal: {
-                Image(systemName: "pills.fill").font(.system(size: 12)).foregroundStyle(W.color(p))
+                Text(ratio(st, stale: stale))
+                    .font(.system(size: 10, weight: .semibold)).monospacedDigit()
+                    .lineLimit(1).minimumScaleFactor(0.5).foregroundStyle(W.teal)
             }
-            .widgetURL(URL(string: "yaoshi://take"))
-            .keylineTint(W.color(p))
+            .widgetURL(URL(string: "yaoshi://dashboard"))
+            .keylineTint(W.teal)
         }
     }
 
     @ViewBuilder
-    private func lockScreen(_ st: DoseAttributes.ContentState) -> some View {
-        let p = st.phase
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                HStack(spacing: 5) {
-                    Image(systemName: p.symbol).font(.system(size: 12))
-                    Text(p == .none ? "药时" : p.label).font(.system(size: 13, weight: .semibold))
-                }
-                .foregroundStyle(W.color(p))
-                Spacer()
-                if st.skippedToday {
-                    Text("今天不吃").font(.system(size: 11)).foregroundStyle(W.violet)
-                } else if st.takenToday > 0 {
-                    Text("今天已服 \(st.takenToday) 次").font(.system(size: 11)).foregroundStyle(W.dim)
-                } else {
-                    Text("按需记录").font(.system(size: 11)).foregroundStyle(W.dim)
-                }
-            }
-            if let last = st.lastDoseAt {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(last, style: .timer)
-                        .font(.system(size: 32, weight: .bold, design: .rounded))
-                        .monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
-                        .foregroundStyle(W.color(p))
-                    Text("距上次服药").font(.system(size: 11)).foregroundStyle(W.dim)
-                    Spacer()
-                }
-                GeometryReader { g in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color.white.opacity(0.15))
-                        Capsule().fill(W.color(p))
-                            .frame(width: g.size.width * CGFloat(min(1, max(0, st.remaining))))
-                    }
-                }
-                .frame(height: 6)
-                HStack {
-                    Text("\(Fmt2.hm(last)) 服 \(st.lastMg) 毫克")
-                        .font(.system(size: 11)).foregroundStyle(W.dim)
-                    Spacer()
-                    if let e = st.effectEndAt, p != .over {
-                        Text("约 \(Fmt2.hm(e)) 退干净").font(.system(size: 11)).foregroundStyle(W.dim)
-                    }
-                }
+    private func peak(_ st: DoseAttributes.ContentState, stale: Bool) -> some View {
+        VStack(alignment: .trailing, spacing: 2) {
+            if !stale, let at = st.predictedPeakAt, at > st.refreshedAt {
+                Text("预计距峰").font(.system(size: 10)).foregroundStyle(W.dim)
+                Text(timerInterval: st.refreshedAt...at, countsDown: true)
+                    .font(.system(size: 19, weight: .semibold, design: .rounded))
+                    .monospacedDigit().frame(maxWidth: 96)
+                Text("约 " + Fmt2.hm(at)).font(.system(size: 9)).foregroundStyle(W.dim)
             } else {
-                Text("还没有服药记录").font(.system(size: 17, weight: .bold))
-                Text("打开 App 按一下大按钮就记上了").font(.system(size: 11)).foregroundStyle(W.dim)
+                Text(stale ? "估算待刷新" : "暂无后续峰值")
+                    .font(.system(size: 11)).foregroundStyle(W.dim)
             }
+        }
+    }
+
+    private func details(_ st: DoseAttributes.ContentState, stale: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let last = st.lastDoseAt {
+                HStack(spacing: 4) {
+                    Text("上次 \(st.lastMg) mg · 已过")
+                    Text(last, style: .timer).monospacedDigit()
+                    Spacer(minLength: 0)
+                }.font(.system(size: 10)).foregroundStyle(W.dim)
+            }
+            Text(stale ? "\(Fmt2.hm(st.refreshedAt)) 时估算 · 打开药时刷新" : "1× = 单次 40 mg 模型峰值")
+                .font(.system(size: 9)).foregroundStyle(W.dim)
+        }
+    }
+
+    private func summary(_ st: DoseAttributes.ContentState, stale: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("药时 · 相对浓度估算").font(.system(size: 11)).foregroundStyle(W.dim)
+                    Text(ratio(st, stale: stale))
+                        .font(.system(size: 32, weight: .bold, design: .rounded))
+                        .monospacedDigit().foregroundStyle(W.teal)
+                }
+                Spacer()
+                peak(st, stale: stale)
+            }
+            details(st, stale: stale)
         }
     }
 }

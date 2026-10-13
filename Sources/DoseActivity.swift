@@ -21,7 +21,11 @@ enum DoseActivityController {
     }
 
     static func state(from snap: SharedSnapshot, now: Date = Date()) -> DoseAttributes.ContentState {
-        DoseAttributes.ContentState(
+        let doses = snap.doses.filter { $0.at <= now }
+        let fallback = snap.status.lastDoseAt.flatMap { $0 <= now ? Dose(at: $0, mg: snap.status.lastMg) : nil }
+        let history = doses.isEmpty ? fallback.map { [$0] } ?? [] : doses
+        let ratio = DoseEngine.totalPlasma(history, at: now, curve: snap.plasmaCurve)
+        return DoseAttributes.ContentState(
             lastDoseAt: snap.status.lastDoseAt,
             lastMg: snap.status.lastMg,
             phaseRaw: snap.status.phase.rawValue,
@@ -33,6 +37,8 @@ enum DoseActivityController {
             targetAt: snap.targetAt,
             skippedToday: snap.skippedToday,
             pillsLeft: snap.pillsLeft,
+            concentrationRatio: history.isEmpty ? nil : ratio,
+            predictedPeakAt: DoseEngine.nextLocalPlasmaPeak(doses: history, now: now, curve: snap.plasmaCurve),
             refreshedAt: now)
     }
 
@@ -40,8 +46,8 @@ enum DoseActivityController {
     static func nextStale(for st: DoseAttributes.ContentState, now: Date) -> Date {
         let cal = Calendar.current
         let tomorrow = cal.startOfDay(for: cal.date(byAdding: .day, value: 1, to: now) ?? now)
-        let candidates: [Date?] = [tomorrow.addingTimeInterval(300),
-                                   st.peakEndAt, st.effectEndAt, st.targetAt]
+        let candidates: [Date?] = [now.addingTimeInterval(300), tomorrow.addingTimeInterval(300),
+                                   st.predictedPeakAt, st.peakEndAt, st.effectEndAt, st.targetAt]
         return candidates.compactMap { $0 }.filter { $0 > now }.min() ?? tomorrow
     }
 
