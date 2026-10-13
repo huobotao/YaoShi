@@ -12,18 +12,13 @@ struct DoseEditor: View {
 
     @State private var confirmDelete = false
     private var isNew: Bool { dose.updatedAt == nil }
-    @State private var changedPillCount: Int? = nil
-
-    // Old records retain their stored milligrams unless the user changes the count.
+    // Never reinterpret a legacy milligram record as a known number of pills.
     private var pillCount: Int? {
-        if let changedPillCount { return changedPillCount }
-        let strength = store.settings.defaultMg
-        guard strength > 0, dose.mg > 0, dose.mg % strength == 0 else { return nil }
-        return dose.mg / strength
+        dose.pillCount
     }
 
     private func setPillCount(_ count: Int) {
-        changedPillCount = count
+        dose.pillCount = count
         dose.mg = count * store.settings.defaultMg
     }
 
@@ -44,7 +39,7 @@ struct DoseEditor: View {
                         HStack {
                             Text("数量")
                             Spacer()
-                            Text("保留原记录").foregroundStyle(YS.dim)
+                            Text("未记录 · 原剂量 \(dose.mg) 毫克").foregroundStyle(YS.dim)
                         }
                         Button("重新按粒设置：1 粒") { setPillCount(1) }
                             .accessibilityIdentifier("resetDosePillCount")
@@ -55,7 +50,7 @@ struct DoseEditor: View {
                 } header: {
                     Text("时间与数量")
                 } footer: {
-                    Text(isNew ? "每粒剂量在「我的」中设置。" : "数量按当前每粒剂量换算；只改时间或备注会保留原记录剂量。")
+                    Text(isNew ? "每粒剂量在「我的」中设置。" : "只改时间或备注会保留原剂量和颗数。调整数量会按当前每粒 \(store.settings.defaultMg) 毫克重新计算剂量；旧记录未记颗数时不自动换算。")
                 }
 
                 Section("为什么吃（可多选，也可以不填）") {

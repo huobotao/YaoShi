@@ -263,7 +263,7 @@ final class Store: ObservableObject {
     /// 快速记一次：默认此刻、默认剂量。这是最常用的入口，一步完成。
     @discardableResult
     func quickTake(at time: Date = Date()) -> Dose {
-        var d = Dose(at: time, mg: settings.defaultMg)
+        var d = Dose(at: time, mg: settings.defaultMg, pillCount: 1)
         d.updatedAt = Date()
         doses.append(d)
         doses.sort { $0.at < $1.at }

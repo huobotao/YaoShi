@@ -48,6 +48,16 @@ final class FakeKeychain: SyncKeychainAccess {
         let timestamp = Date(timeIntervalSince1970: 1_700_000_000)
         var doseA = Dose(at: timestamp, mg: 40)
         doseA.updatedAt = timestamp
+        let legacyDoseData = try JSONEncoder().encode(doseA)
+        let legacyDoseObject = try JSONSerialization.jsonObject(with: legacyDoseData) as! [String: Any]
+        check(legacyDoseObject["pillCount"] == nil, "unknown count retains historical JSON shape")
+        let legacyDose = try JSONDecoder().decode(Dose.self, from: legacyDoseData)
+        check(legacyDose.pillCount == nil && legacyDose.mg == 40,
+              "historical milligram records decode with unknown count and unchanged dose")
+        let countedDose = Dose(at: timestamp, mg: 100, pillCount: 2)
+        let countRoundTrip = try JSONDecoder().decode(Dose.self, from: JSONEncoder().encode(countedDose))
+        check(countRoundTrip.pillCount == 2 && countRoundTrip.mg == 100,
+              "explicit actual count survives serialization independently of milligrams")
         var doseB = Dose(at: timestamp.addingTimeInterval(300), mg: 40)
         doseB.updatedAt = timestamp
         var a = SyncPayload(); a.doses = [doseA]
@@ -174,6 +184,7 @@ final class FakeKeychain: SyncKeychainAccess {
         check(notes.effects.first?.doseID == nil && notes.doses.isEmpty && notes.supply.pillsLeft == 12,
               "note does not create dose or change inventory")
         let noteDose = notes.quickTake(at: timestamp.addingTimeInterval(60))
+        check(noteDose.pillCount == 1, "quick add records one actual pill")
         var secondNote = EffectLog(at: timestamp.addingTimeInterval(3600))
         secondNote.note = "药效挺好，记下此刻。"
         check(notes.saveEffect(secondNote), "second same-day note saves independently")
@@ -184,6 +195,7 @@ final class FakeKeychain: SyncKeychainAccess {
         check(notes.effects.count == 2 && notes.effects.first?.note == firstNote.note && notes.effects.first?.at == timestamp,
               "editing does not duplicate or reset note time")
         let reloadedNotes = Store(directory: noteDirectory, defaults: noteDefaults, syncAutomatically: false)
+        check(reloadedNotes.doses.first?.pillCount == 1, "actual pill count survives store reload")
         check(reloadedNotes.effects.count == 2 && reloadedNotes.effects.first?.note == firstNote.note,
               "feeling notes survive restart")
         check(reloadedNotes.doses.count == 1 && reloadedNotes.supply.pillsLeft == 12,

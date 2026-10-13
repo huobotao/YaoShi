@@ -106,6 +106,8 @@ struct Dose: Codable, Identifiable, Hashable, SyncRecord {
     var at: Date
     /// 剂量（毫克）
     var mg: Int = 40
+    /// 实记颗数；旧的毫克记录缺少此字段时保持未知，不随当前每粒剂量变化。
+    var pillCount: Int? = nil
     /// 药名。第一版固定 Vyvanse，留字段方便以后换药或加辅助药
     var med: String = "Vyvanse"
     /// 为什么吃，可多选，可为空

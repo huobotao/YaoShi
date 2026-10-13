@@ -66,6 +66,7 @@ struct TodayView: View {
         if width >= 900 {
             HStack(alignment: .top, spacing: 18) {
                 VStack(spacing: 14) {
+                    DoseWindowCard()
                     gapCard
                     quickButton
                     if let d = store.lastQuickAdded { justAddedBar(d) }
@@ -84,6 +85,7 @@ struct TodayView: View {
             .frame(maxWidth: 1168)
         } else {
             VStack(spacing: 14) {
+                DoseWindowCard()
                 gapCard
                 quickButton
                 if let d = store.lastQuickAdded { justAddedBar(d) }
@@ -268,7 +270,7 @@ struct TodayView: View {
             .foregroundStyle(YS.text)
         }
         .sheet(isPresented: $showDetail) {
-            DoseEditor(dose: Dose(at: Date(), mg: store.settings.defaultMg)) {
+            DoseEditor(dose: Dose(at: Date(), mg: store.settings.defaultMg, pillCount: 1)) {
                 store.add($0)
             } onDelete: { _ in }
         }

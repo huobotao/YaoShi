@@ -10,6 +10,7 @@ struct StatsView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
+                    DoseWindowCard()
                     picker
                     punchCard
                     hourHistogram

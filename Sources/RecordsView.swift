@@ -117,7 +117,7 @@ struct RecordsView: View {
             }
         }
         .sheet(isPresented: $newDose) {
-            DoseEditor(dose: Dose(at: Date(), mg: store.settings.defaultMg)) {
+            DoseEditor(dose: Dose(at: Date(), mg: store.settings.defaultMg, pillCount: 1)) {
                 store.add($0)
             } onDelete: { _ in }
         }

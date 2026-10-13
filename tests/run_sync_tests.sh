@@ -24,6 +24,11 @@ xcrun swiftc -parse-as-library \
 "$TEST_BUILD/episode-tests"
 
 xcrun swiftc -parse-as-library \
+  "$ROOT/Sources/Models.swift" "$ROOT/Sources/DoseWindowModel.swift" \
+  "$ROOT/tests/DoseWindowTests.swift" -o "$TEST_BUILD/window-tests"
+"$TEST_BUILD/window-tests"
+
+xcrun swiftc -parse-as-library \
   "$ROOT/Sources/Models.swift" "$ROOT/Sources/DoseEngine.swift" "$ROOT/Sources/DoseCurveModel.swift" \
   "$ROOT/tests/DoseCurveTests.swift" -o "$TEST_BUILD/curve-tests"
 "$TEST_BUILD/curve-tests"
