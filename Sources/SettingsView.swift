@@ -4,6 +4,7 @@ struct SettingsView: View {
     @EnvironmentObject var store: Store
     @State private var s = SyncedSettings()
     @State private var loaded = false
+    @State private var showTVPresentation = false
 
     var body: some View {
         NavigationStack {
@@ -11,6 +12,7 @@ struct SettingsView: View {
                 recordingSection
                 plasmaCurveSection
                 syncSection
+                tvPresentationSection
                 PartnerSharingSettingsSection(app: .yaoShi)
                 storageSection
                 aboutSection
@@ -19,12 +21,31 @@ struct SettingsView: View {
             .background(YS.bg)
             .navigationTitle("我的")
             .navigationBarTitleDisplayMode(.inline)
+            .fullScreenCover(isPresented: $showTVPresentation) {
+                TVPresentationView().environmentObject(store)
+            }
             .onAppear {
                 if !loaded { s = store.settings; loaded = true }
             }
             .onChange(of: store.settings) { old, new in
                 if s == old { s = new }
             }
+        }
+    }
+
+    private var tvPresentationSection: some View {
+        Section {
+            Button { showTVPresentation = true } label: {
+                Label("打开电视大屏展示", systemImage: "tv")
+                    .foregroundStyle(YS.teal)
+            }
+            .accessibilityIdentifier("openTVPresentation")
+            NavigationLink("连接 Apple TV 原生版") { TVLinkSettingsView() }
+        } header: {
+            Text("Apple TV 与大屏")
+        } footer: {
+            Text("先在控制中心打开「屏幕镜像」，选择你的 Apple TV，再打开此横向展示页。画面会包含本机记录；查值、移动时间和缩放仍在 iPhone、iPad 或 Mac 上操作。安静展示保留时钟和当前曲线；展示页处于前台时保持亮屏，退出或进入后台后恢复原设置。")
+                .font(.system(size: 11))
         }
     }
 

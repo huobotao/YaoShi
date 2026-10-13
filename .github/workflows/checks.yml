@@ -27,3 +27,7 @@ jobs:
         env:
           YAOSHI_SIM_DIR: ${{ runner.temp }}/yaoshi-sim
         run: bash build_sim.sh
+      - name: Apple TV simulator build
+        env:
+          YAOSHI_TV_BUILD_DIR: ${{ runner.temp }}/yaoshi-tv
+        run: bash build_tv.sh

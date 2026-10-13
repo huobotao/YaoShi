@@ -13,7 +13,7 @@ mkdir -p "$APP" "$EXT"
 
 echo "==> 编译主 App（模拟器）"
 xcrun -sdk iphonesimulator swiftc -D YAOSHI_APP -target ${ARCH}-apple-ios17.0-simulator -sdk "$SDK" \
-  -o "$APP/药时" "$SRC"/*.swift "$PARTNER_DIR"/*.swift
+  -o "$APP/药时" "$SRC"/*.swift "$PARTNER_DIR"/*.swift "$ROOT/Shared/TV/"*.swift
 
 echo "==> 编译 Widget（模拟器）"
 xcrun -sdk iphonesimulator swiftc -target ${ARCH}-apple-ios17.0-simulator -sdk "$SDK" \
@@ -31,6 +31,8 @@ plistlib.dump({
  "UILaunchScreen":{},"UIUserInterfaceStyle":"Dark",
  "UISupportedInterfaceOrientations":["UIInterfaceOrientationPortrait","UIInterfaceOrientationLandscapeLeft","UIInterfaceOrientationLandscapeRight"],
  "UISupportedInterfaceOrientations~ipad":["UIInterfaceOrientationPortrait","UIInterfaceOrientationPortraitUpsideDown","UIInterfaceOrientationLandscapeLeft","UIInterfaceOrientationLandscapeRight"],
+ "NSLocalNetworkUsageDescription":"经你确认后，与 Apple TV 配对并发送曲线数据。",
+ "NSBonjourServices":["_yaoshi-tv-v1._tcp"],
  "NSSupportsLiveActivities":True,
  "CFBundleURLTypes":[{"CFBundleURLName":"com.richardhuo.yaoshi","CFBundleURLSchemes":["yaoshi"]}],"CFBundleSupportedPlatforms":["iPhoneSimulator"],
  "UIDeviceFamily":[1,2],

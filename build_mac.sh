@@ -15,10 +15,12 @@ xcrun --sdk macosx swiftc -D YAOSHI_APP \
   -target "$ARCH-apple-ios17.0-macabi" -sdk "$SDK" \
   -F "$SDK/System/iOSSupport/System/Library/Frameworks" \
   -I "$SDK/System/iOSSupport/usr/include" -O -whole-module-optimization \
-  -o "$APP/Contents/MacOS/药时" "$ROOT/Sources/"*.swift "$ROOT/Shared/PartnerSync/"*.swift
+  -o "$APP/Contents/MacOS/药时" "$ROOT/Sources/"*.swift "$ROOT/Shared/PartnerSync/"*.swift "$ROOT/Shared/TV/"*.swift
 python3 - "$APP/Contents/Info.plist" "$BUNDLE_ID" "$PROFILE" <<'PY'
 import plistlib,sys
 plistlib.dump({
+ 'NSLocalNetworkUsageDescription':'经你确认后，与 Apple TV 配对并发送曲线数据。',
+ 'NSBonjourServices':['_yaoshi-tv-v1._tcp'],
  'CFBundleDevelopmentRegion':'zh_CN', 'CFBundleDisplayName':'药时 Mac', 'CFBundleName':'药时 Mac',
  'CFBundleExecutable':'药时', 'CFBundleIdentifier':sys.argv[2],
  'CFBundleInfoDictionaryVersion':'6.0', 'CFBundlePackageType':'APPL',
@@ -46,7 +48,7 @@ if [ -n "$PROFILE" ]; then
 fi
 python3 - "$BUILD/entitlements.plist" "$BUILD/mac-profile.plist" "$PROFILE" "$BUNDLE_ID" <<'PY'
 import plistlib,sys
-ent={'com.apple.security.app-sandbox':True,'com.apple.security.network.client':True,
+ent={'com.apple.security.app-sandbox':True,'com.apple.security.network.client':True,'com.apple.security.network.server':True,
      'com.apple.security.files.user-selected.read-write':True}
 if sys.argv[3]:
     p=plistlib.load(open(sys.argv[2],'rb'))

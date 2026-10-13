@@ -8,6 +8,8 @@
 - 试算页可拖动模拟服药时刻，比较不加新剂与模拟后的两条曲线；试算不写入实际记录。
 - 以本轮第一条服药记录为起点，跨天查看实际记录的进食、入睡和醒来；可补填、修改时间。
 - iPhone / iPad 共用代码；iPad 提供宽屏布局。Mac 版使用 Mac Catalyst 构建。
+- 大屏展示页可通过系统屏幕镜像投放到 Apple TV；本机可查值、移动与缩放。
+- 原生 tvOS 看板提供遥控器查值、平移、缩放及常显模式；与手机显式配对，接收最小化的曲线快照。
 - 小组件、实时活动、Apple Watch 与独立的只读伴侣 App 源码一并保留。
 - “我的 → 关于”显示版本号与源码提交，便于核对设备；统一版本配置在 `version.json`。
 
@@ -69,3 +71,22 @@ YAOSHI_MAC_BUILD_DIR="$(mktemp -d /tmp/yaoshi-mac.XXXXXX)" bash build_mac.sh
 公开仓库只保存代码、应用图标与合成测试数据。不要上传设备备份、健康记录、真实笔记、邀请链接、访问令牌、签名文件或包含这些内容的截图。更新 App 前请独立备份设备数据。
 
 参与方式见 [CONTRIBUTING.md](CONTRIBUTING.md)。优先欢迎图表手势、无障碍、iPad / Mac 适配、离线记录可靠性与同步冲突处理方面的贡献。图标随本项目发布；系统框架、SF Symbols 等 Apple 资源仍适用其各自条款。
+
+## 电视展示
+
+**屏幕镜像**：iPhone/iPad 的「我的 → 打开电视大屏展示」，再从控制中心启动屏幕镜像并选择自己的 Apple TV。操作在手机/iPad 上完成；镜像期间保持药时在前台。Mac 可使用系统屏幕镜像，但本地版只显示本机记录。
+
+**原生 Apple TV（初版，需真机验收）**：电视安装独立 tvOS App 后开始配对；手机进入「我的 → 连接 Apple TV」。核对两端验证码完全相同并分别确认，再发送最新曲线。只传送服药时刻、剂量、进食状态与模型参数，不含笔记、感受或身份字段。使用强制加密的本地会话；电视只在内存中保留快照。手机发送后可以断开，电视会标注数据接收时间并继续计算；新记录需要重新发送，不能把离线快照当作已同步的新记录。
+
+遥控器聚焦曲线后，左右移动时间/查值，上下缩放。常显模式是 App 前台界面，不是 tvOS 系统屏保插件。退出或进入后台恢复正常待机设置并清除电视快照。
+
+```sh
+# tvOS 模拟器；不需要开发者签名
+YAOSHI_TV_BUILD_DIR=/tmp/yaoshi-tv-review bash build_tv.sh
+# 真机另需已配对设备、有效 tvOS provisioning profile 及签名身份
+YAOSHI_TV_SIMULATOR=0 YAOSHI_TV_PROFILE=/path/to/tv.mobileprovision \
+  YAOSHI_TV_SIGNING_IDENTITY='Apple Development: …' \
+  YAOSHI_TV_BUILD_DIR=/tmp/yaoshi-tv-device bash build_tv.sh
+```
+
+iOS 描述文件不能用于 Apple TV。构建成功不代表已经安装或验证了真实电视的遥控器与跨设备配对。

@@ -37,3 +37,9 @@ xcrun swiftc -parse-as-library \
   "$ROOT/Sources/Models.swift" "$ROOT/Sources/DoseEngine.swift" "$ROOT/Sources/DoseCurveModel.swift" "$ROOT/Sources/DoseComparisonModel.swift" \
   "$ROOT/Tests/DoseComparisonTests.swift" -o "$TEST_BUILD/comparison-tests"
 "$TEST_BUILD/comparison-tests"
+
+xcrun swiftc -parse-as-library \
+  "$ROOT/Sources/Models.swift" "$ROOT/Sources/DoseEngine.swift" \
+  "$ROOT/Shared/TV/TVPairing.swift" "$ROOT/Shared/TV/TVCurveSnapshot.swift" \
+  "$ROOT/tests/TVPairingTests.swift" -o "$TEST_BUILD/tv-pairing-tests"
+"$TEST_BUILD/tv-pairing-tests"

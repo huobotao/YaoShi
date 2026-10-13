@@ -28,7 +28,7 @@ xcrun -sdk iphoneos swiftc \
   -sdk "$SDK" \
   -O -whole-module-optimization \
   -o "$APP/药时" \
-  "$SRC"/*.swift "$PARTNER_DIR"/*.swift
+  "$SRC"/*.swift "$PARTNER_DIR"/*.swift "$ROOTDIR/Shared/TV/"*.swift
 
 echo "==> 写 Info.plist"
 cat > "$APP/Info.plist" <<'PLIST'
@@ -43,6 +43,8 @@ cat > "$APP/Info.plist" <<'PLIST'
   <key>CFBundleIdentifier</key><string>com.richardhuo.yaoshi</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundlePackageType</key><string>APPL</string>
+  <key>NSLocalNetworkUsageDescription</key><string>经你确认后，与同一网络的 Apple TV 配对并发送曲线数据。</string>
+  <key>NSBonjourServices</key><array><string>_yaoshi-tv-v1._tcp</string></array>
   <key>LSRequiresIPhoneOS</key><true/>
   <key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
   <key>MinimumOSVersion</key><string>17.0</string>
