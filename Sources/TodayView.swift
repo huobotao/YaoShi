@@ -150,7 +150,7 @@ struct TodayView: View {
                         }
 
                         // 数字和曲线共享同一时刻、同一份模型结果。
-                        let curve = DoseCurveModel(doses: stack, now: ctx.date,
+                        let curve = DoseCurveModel(doses: store.doses, now: ctx.date,
                                                    curve: store.settings.plasmaCurve)
                         Divider().overlay(YS.line).padding(.vertical, 2)
                         HStack(alignment: .firstTextBaseline, spacing: 8) {

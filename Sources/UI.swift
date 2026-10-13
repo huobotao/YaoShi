@@ -168,28 +168,20 @@ struct DoseCurve: View {
     @State private var isMovingTime = false
     @State private var selectedAnnotationID: UUID?
 
-    private var baseStart: Date {
-        guard expanded else { return model.start }
-        let noteDates = annotations.filter { !$0.note.isEmpty }.map(\.at)
-        let dates = [model.start] + model.historyDoses.map(\.at) + noteDates
-        return dates.min() ?? model.start
-    }
-
+    // The initial window stays near now; the viewport can travel beyond it in either direction.
+    private var baseStart: Date { model.start }
     private var baseEnd: Date { model.end }
-    private var baseDuration: Double { max(0.001, baseEnd.timeIntervalSince(baseStart)) }
-    private var maximumZoom: Double { max(1, baseDuration / 60) }
+    private var baseDuration: Double { max(60, baseEnd.timeIntervalSince(baseStart)) }
+    private var maximumZoom: Double { baseDuration / CurveTimeViewport.minimumDuration }
+    private var minimumZoom: Double { baseDuration / CurveTimeViewport.maximumDuration }
     private var resolvedZoom: Double {
-        min(maximumZoom, max(1, zoomScale.isFinite ? zoomScale : 1))
+        CurveTimeViewport.resolvedZoom(zoomScale, baseDuration: baseDuration)
     }
-    private var visibleDuration: Double { max(0.001, baseDuration / resolvedZoom) }
+    private var visibleDuration: Double { baseDuration / resolvedZoom }
     private var baseCenter: Date { baseStart.addingTimeInterval(baseDuration / 2) }
     private var visibleRange: ClosedRange<Date> {
-        let half = visibleDuration / 2
-        let minCenter = baseStart.addingTimeInterval(half)
-        let maxCenter = baseEnd.addingTimeInterval(-half)
-        let proposed = baseCenter.addingTimeInterval(centerOffsetSeconds)
-        let center = min(max(proposed, minCenter), maxCenter)
-        return center.addingTimeInterval(-half)...center.addingTimeInterval(half)
+        CurveTimeViewport.range(baseStart: baseStart, baseEnd: baseEnd,
+                                zoom: resolvedZoom, offset: centerOffsetSeconds)
     }
 
     private var selectedAnnotation: EffectLog? {
@@ -290,7 +282,7 @@ struct DoseCurve: View {
                 Button { setZoom(resolvedZoom / 1.5) } label: {
                     Image(systemName: "minus.magnifyingglass").frame(width: 44, height: 36)
                 }
-                .disabled(resolvedZoom <= 1)
+                .disabled(resolvedZoom <= minimumZoom)
                 .accessibilityLabel("缩小曲线")
                 Text(zoomLabel).font(.system(size: 11, weight: .medium, design: .rounded)).monospacedDigit()
                     .foregroundStyle(YS.dim).frame(minWidth: 48)
@@ -311,14 +303,14 @@ struct DoseCurve: View {
     }
 
     private var zoomLabel: String {
-        resolvedZoom >= 1_000_000
+        resolvedZoom >= 1_000_000 || resolvedZoom < 0.1
             ? String(format: "%.2e×", resolvedZoom)
             : String(format: "%.1f×", resolvedZoom)
     }
 
     private func setZoom(_ requested: Double) {
         let center = inspectionDate ?? visibleRange.lowerBound.addingTimeInterval(visibleDuration / 2)
-        zoomScale = min(maximumZoom, max(1, requested.isFinite ? requested : maximumZoom))
+        zoomScale = CurveTimeViewport.resolvedZoom(requested, baseDuration: baseDuration)
         centerOffsetSeconds = center.timeIntervalSince(baseCenter)
     }
 
@@ -366,7 +358,7 @@ struct DoseCurve: View {
                       samples: [DoseCurveModel.Sample]) -> some View {
         let span = max(0.001, range.upperBound.timeIntervalSince(range.lowerBound))
         let x: (Date) -> CGFloat = { 5 + (w - 10) * CGFloat($0.timeIntervalSince(range.lowerBound) / span) }
-        let yMax = expanded ? model.analysisUpperLevel : model.upperLevel
+        let yMax = max(model.upperLevel, max(1.15, (samples.map(\.level).max() ?? 0) * 1.12))
         let y: (Double) -> CGFloat = { h - 5 - (h - 38) * CGFloat($0 / yMax) }
         let past = samples.filter { $0.at <= model.now }
         let future = samples.filter { $0.at >= model.now }
@@ -494,8 +486,7 @@ struct DoseCurve: View {
                             dragStartOffset = center.timeIntervalSince(baseCenter)
                         }
                         let shift = -Double(translation / max(1, w - 10)) * visibleDuration
-                        let limit = max(0, (baseDuration - visibleDuration) / 2)
-                        centerOffsetSeconds = min(limit, max(-limit, dragStartOffset + shift))
+                        centerOffsetSeconds = CurveTimeViewport.boundedOffset(dragStartOffset + shift)
                     } else {
                         selectedDate = date(at: point.x, width: w, in: visibleRange)
                     }
@@ -507,12 +498,11 @@ struct DoseCurve: View {
                         pinchAnchorDate = date(at: location.x, width: w, in: visibleRange)
                     }
                     if state == .began || state == .changed, scale.isFinite, scale > 0 {
-                        zoomScale = min(maximumZoom, max(1, pinchStartZoom * Double(scale)))
+                        zoomScale = CurveTimeViewport.resolvedZoom(pinchStartZoom * Double(scale), baseDuration: baseDuration)
                         if let anchor = pinchAnchorDate {
                             let fraction = min(1, max(0, Double((location.x - 5) / max(1, w - 10))))
                             let center = anchor.addingTimeInterval((0.5 - fraction) * visibleDuration)
-                            let limit = max(0, (baseDuration - visibleDuration) / 2)
-                            centerOffsetSeconds = min(limit, max(-limit, center.timeIntervalSince(baseCenter)))
+                            centerOffsetSeconds = CurveTimeViewport.boundedOffset(center.timeIntervalSince(baseCenter))
                         }
                     }
                     if state == .ended || state == .cancelled || state == .failed {
@@ -581,7 +571,7 @@ struct DoseCurve: View {
 /// A zero-delay, one-finger press owns chart touches before the enclosing ScrollView
 /// starts scrolling. The separate pinch recognizer can run alongside it. Placing this
 /// surface below note buttons keeps their taps out of these recognizers entirely.
-private struct CurveTouchSurface: UIViewRepresentable {
+struct CurveTouchSurface: UIViewRepresentable {
     var onTouch: (CGPoint, CGFloat, UIGestureRecognizer.State) -> Void
     var onPinch: (CGFloat, CGPoint, UIGestureRecognizer.State) -> Void
     var onAccessibilityStep: (Int) -> Void

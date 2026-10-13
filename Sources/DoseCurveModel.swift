@@ -99,6 +99,11 @@ struct DoseCurveModel {
             if absorption >= lower && absorption <= upper { dates.append(absorption) }
             let foodShift = dose.food == .withFood ? PlasmaCurveConfiguration.foodDelayHours : 0
             let peak = dose.at.addingTimeInterval((curve.peakTimeHours + foodShift) * 3600)
+            // Preserve the decay shape even when the uniform grid spans weeks or years.
+            let decayDates = [1.0, 2, 4, 8, 16].map {
+                peak.addingTimeInterval($0 * curve.halfLifeHours * 3600)
+            }
+            dates.append(contentsOf: decayDates.filter { range.contains($0) })
             if peak >= lower && peak <= upper { dates.append(peak) }
         }
 
@@ -106,5 +111,31 @@ struct DoseCurveModel {
             Sample(at: date,
                    level: date == now ? currentLevel : DoseEngine.totalPlasma(doses, at: date, curve: curve))
         }
+    }
+}
+
+/// Finite arithmetic guards only: viewport navigation has no record-derived start/end edge.
+/// A minute remains inspectable, while zooming out can cover many millennia.
+enum CurveTimeViewport {
+    static let minimumDuration: Double = 60
+    static let maximumDuration: Double = 1e12
+
+    static func resolvedZoom(_ requested: Double, baseDuration: Double) -> Double {
+        let duration = max(minimumDuration, baseDuration)
+        return min(duration / minimumDuration,
+                   max(duration / maximumDuration, requested.isFinite ? requested : 1))
+    }
+
+    static func boundedOffset(_ seconds: Double) -> Double {
+        guard seconds.isFinite else { return 0 }
+        return min(maximumDuration, max(-maximumDuration, seconds))
+    }
+
+    static func range(baseStart: Date, baseEnd: Date, zoom: Double,
+                      offset: Double) -> ClosedRange<Date> {
+        let baseDuration = max(minimumDuration, baseEnd.timeIntervalSince(baseStart))
+        let span = baseDuration / resolvedZoom(zoom, baseDuration: baseDuration)
+        let center = baseStart.addingTimeInterval(baseDuration / 2 + boundedOffset(offset))
+        return center.addingTimeInterval(-span / 2)...center.addingTimeInterval(span / 2)
     }
 }

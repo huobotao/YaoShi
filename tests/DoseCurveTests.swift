@@ -96,6 +96,40 @@ import Foundation
               "one-minute zoom preserves exact time bounds")
         check(zoomed.allSatisfy { $0.level == customCurve.level(at: $0.at) },
               "zoomed curve and inspection values use the same model")
+        // Navigation must not stop at the default 72-hour history / 12-hour future view.
+        let baseDuration = curve.end.timeIntervalSince(curve.start)
+        let wideRange = CurveTimeViewport.range(baseStart: curve.start, baseEnd: curve.end,
+                                                zoom: 0.25, offset: 0)
+        check(close(wideRange.upperBound.timeIntervalSince(wideRange.lowerBound), baseDuration * 4),
+              "zoom out below 1 expands beyond the initial range")
+        for direction in [-1.0, 1.0] {
+            let offset = direction * 365 * 24 * 3600
+            let shifted = CurveTimeViewport.range(baseStart: curve.start, baseEnd: curve.end,
+                                                   zoom: 1, offset: offset)
+            check(close(shifted.lowerBound.timeIntervalSince(curve.start), offset),
+                  "panning one year in either direction has no initial-window clamp")
+        }
+        let oldest = Dose(at: now.addingTimeInterval(-365 * 24 * 3600), mg: 80)
+        let fullHistory = DoseCurveModel(doses: doses + [oldest], now: now)
+        let oldPeakDate = oldest.at.addingTimeInterval(3.8 * 3600)
+        let oldRange = oldest.at.addingTimeInterval(-3600)...oldest.at.addingTimeInterval(24 * 3600)
+        check(close(fullHistory.level(at: oldPeakDate), 2, tolerance: 0.001),
+              "historical inspection retains a dose one year before now")
+        check(fullHistory.samples(in: oldRange).contains { $0.at == oldPeakDate && $0.level > 1.99 },
+              "panned historical samples preserve the older dose peak")
+        let enormousRange = now.addingTimeInterval(-10 * 365 * 24 * 3600)...now.addingTimeInterval(10 * 365 * 24 * 3600)
+        let wideSamples = fullHistory.samples(in: enormousRange)
+        check(wideSamples.contains { $0.at == oldPeakDate && $0.level > 1.99 },
+              "wide zoom retains exact narrow peak dates")
+        check(wideSamples.allSatisfy { $0.level.isFinite } && wideSamples.last!.level < 0.01,
+              "remote future decays naturally with finite samples")
+        let minimumRange = CurveTimeViewport.range(baseStart: curve.start, baseEnd: curve.end,
+                                                   zoom: 1e15, offset: 0)
+        check(close(minimumRange.upperBound.timeIntervalSince(minimumRange.lowerBound), 60),
+              "maximum zoom keeps one minute inspectable")
+        check(CurveTimeViewport.resolvedZoom(.nan, baseDuration: baseDuration).isFinite &&
+              CurveTimeViewport.boundedOffset(.infinity).isFinite,
+              "invalid gesture arithmetic cannot poison viewport state")
         print("PASS: \(passed) concentration curve regression checks; fixture now = \(curve.currentLevel)")
     }
 }

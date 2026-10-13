@@ -32,3 +32,8 @@ xcrun swiftc -parse-as-library \
   "$ROOT/Sources/Models.swift" "$ROOT/Sources/LifeTimeline.swift" \
   "$ROOT/tests/LifeTimelineTests.swift" -o "$TEST_BUILD/life-tests"
 "$TEST_BUILD/life-tests"
+
+xcrun swiftc -parse-as-library \
+  "$ROOT/Sources/Models.swift" "$ROOT/Sources/DoseEngine.swift" "$ROOT/Sources/DoseCurveModel.swift" "$ROOT/Sources/DoseComparisonModel.swift" \
+  "$ROOT/Tests/DoseComparisonTests.swift" -o "$TEST_BUILD/comparison-tests"
+"$TEST_BUILD/comparison-tests"

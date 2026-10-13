@@ -16,8 +16,7 @@ struct DoseCurveAnalysisView: View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             GeometryReader { geometry in
                 let now = context.date
-                let stack = store.activeStack(at: now)
-                let model = DoseCurveModel(doses: stack, now: now,
+                let model = DoseCurveModel(doses: store.doses, now: now,
                                            curve: store.settings.plasmaCurve)
                 let chartHeight = min(620, max(190, geometry.size.height * (geometry.size.width > geometry.size.height ? 0.42 : 0.52)))
 
@@ -27,7 +26,7 @@ struct DoseCurveAnalysisView: View {
                             HStack(spacing: 7) {
                                 Image(systemName: "waveform.path")
                                     .foregroundStyle(YS.teal)
-                                Text("完整记录时间段 · 单指查数值，双指缩放")
+                                Text("过去与未来可继续移动 · 双指缩放")
                                     .font(.system(size: 13, weight: .semibold))
                                     .foregroundStyle(YS.text)
                             }
