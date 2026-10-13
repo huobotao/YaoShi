@@ -1,0 +1,27 @@
+.DS_Store
+build/
+.build/
+DerivedData/
+*.app/
+*.ipa
+*.mobileprovision
+*.p12
+*.p8
+.env
+.env.*
+device-backups/
+Documents/
+*.log
+
+__pycache__/
+*.pyc
+
+# Private material and local-only signing configuration
+*.pfx
+*.key
+*.pem
+*.cer
+*.provisionprofile
+.envrc
+*.xcuserstate
+xcuserdata/

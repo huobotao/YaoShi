@@ -1,0 +1,29 @@
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Toolchain
+        run: xcodebuild -version
+      - name: Core regression tests
+        run: bash tests/run_sync_tests.sh
+      - name: Version stamping tests
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
+      - name: iPhone and iPad simulator build
+        env:
+          YAOSHI_SIM_DIR: ${{ runner.temp }}/yaoshi-sim
+        run: bash build_sim.sh
