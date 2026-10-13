@@ -66,8 +66,8 @@ struct TodayView: View {
         if width >= 900 {
             HStack(alignment: .top, spacing: 18) {
                 VStack(spacing: 14) {
-                    DoseWindowCard()
                     gapCard
+                    DoseWindowCard()
                     quickButton
                     if let d = store.lastQuickAdded { justAddedBar(d) }
                     todayCard
@@ -85,8 +85,8 @@ struct TodayView: View {
             .frame(maxWidth: 1168)
         } else {
             VStack(spacing: 14) {
-                DoseWindowCard()
                 gapCard
+                DoseWindowCard()
                 quickButton
                 if let d = store.lastQuickAdded { justAddedBar(d) }
                 DoseEpisodeCard()
