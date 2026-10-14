@@ -67,7 +67,9 @@ final class LocationSharingManager: NSObject, ObservableObject, CLLocationManage
         location.pausesLocationUpdatesAutomatically = false
         #if !targetEnvironment(macCatalyst)
         location.allowsBackgroundLocationUpdates = true
-        location.showsBackgroundLocationIndicator = true
+        // Keep Apple's default presentation for Always authorization. System
+        // permission prompts, When-In-Use indicators and privacy reminders remain.
+        location.showsBackgroundLocationIndicator = false
         #endif
         network.pathUpdateHandler = { [weak self] path in
             let name: String
