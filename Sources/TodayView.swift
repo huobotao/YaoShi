@@ -66,6 +66,7 @@ struct TodayView: View {
         if width >= 900 {
             HStack(alignment: .top, spacing: 18) {
                 VStack(spacing: 14) {
+                    backgroundExperimentEntry
                     gapCard
                     DoseWindowCard()
                     quickButton
@@ -85,6 +86,7 @@ struct TodayView: View {
             .frame(maxWidth: 1168)
         } else {
             VStack(spacing: 14) {
+                backgroundExperimentEntry
                 gapCard
                 DoseWindowCard()
                 quickButton
@@ -97,6 +99,15 @@ struct TodayView: View {
             }
             .frame(maxWidth: 720)
         }
+    }
+
+    @ViewBuilder
+    private var backgroundExperimentEntry: some View {
+        #if os(iOS) && !targetEnvironment(macCatalyst)
+        if Bundle.main.object(forInfoDictionaryKey: "YaoShiBackgroundLocationExperiment") as? Bool == true {
+            BackgroundRefreshExperimentEntry()
+        }
+        #endif
     }
 
     // MARK: 距上次服药

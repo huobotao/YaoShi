@@ -2,6 +2,52 @@
 import SwiftUI
 import UIKit
 
+/// A visible home-screen entry for the explicitly enabled experiment build.
+struct BackgroundRefreshExperimentEntry: View {
+    @ObservedObject private var experiment = BackgroundRefreshExperiment.shared
+    @State private var showControls = false
+
+    var body: some View {
+        Button {
+            showControls = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "location.circle.fill")
+                    .font(.title2)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("后台刷新实验")
+                        .font(.headline)
+                    Text(experiment.isRunning ? "实验进行中 · 点此查看或停止" : "点此开始 · 首次开启会申请定位权限")
+                        .font(.caption)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+            }
+            .foregroundStyle(YS.teal)
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(YS.teal.opacity(0.14), in: RoundedRectangle(cornerRadius: 18))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("openBackgroundRefreshExperiment")
+        .sheet(isPresented: $showControls) {
+            NavigationStack {
+                Form {
+                    BackgroundRefreshExperimentSection()
+                }
+                .navigationTitle("后台刷新实验")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("完成") { showControls = false }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Local, explicit test control; deliberately has no SyncedSettings binding.
 struct BackgroundRefreshExperimentSection: View {
     @ObservedObject private var experiment = BackgroundRefreshExperiment.shared
