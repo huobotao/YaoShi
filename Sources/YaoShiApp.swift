@@ -88,6 +88,11 @@ struct YaoShiApp: App {
         }
         _launch = StateObject(wrappedValue: YaoShiLaunchContext(store: store))
         PhoneWatchLink.shared.start(store: store)
+        #if os(iOS) && !targetEnvironment(macCatalyst)
+        if Bundle.main.object(forInfoDictionaryKey: "YaoShiBackgroundLocationExperiment") as? Bool == true {
+            BackgroundRefreshExperiment.shared.configure { [weak store] in store?.publish() }
+        }
+        #endif
     }
 
     var body: some Scene {
@@ -125,6 +130,11 @@ struct YaoShiApp: App {
                     }
                     .onReceive(NotificationCenter.default.publisher(
                         for: UIApplication.didBecomeActiveNotification)) { _ in
+                        #if os(iOS) && !targetEnvironment(macCatalyst)
+                        if Bundle.main.object(forInfoDictionaryKey: "YaoShiBackgroundLocationExperiment") as? Bool == true {
+                            BackgroundRefreshExperiment.shared.ensureLifecycle()
+                        }
+                        #endif
                         // Scene phase may be active before UIKit permits Activity.request.
                         // Publish again once UIKit confirms foreground execution.
                         store.publish()
@@ -144,6 +154,11 @@ struct YaoShiApp: App {
         }
         .onChange(of: phase) { _, new in
             guard let store = launch.store else { return }
+            #if os(iOS) && !targetEnvironment(macCatalyst)
+            if Bundle.main.object(forInfoDictionaryKey: "YaoShiBackgroundLocationExperiment") as? Bool == true {
+                BackgroundRefreshExperiment.shared.ensureLifecycle()
+            }
+            #endif
             // iCloud 钥匙串没有变更回调，只能在回到前台这个时机对齐
             if new == .active {
                 store.sync()

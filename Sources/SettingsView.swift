@@ -12,6 +12,11 @@ struct SettingsView: View {
                 recordingSection
                 plasmaCurveSection
                 syncSection
+                #if os(iOS) && !targetEnvironment(macCatalyst)
+                if Bundle.main.object(forInfoDictionaryKey: "YaoShiBackgroundLocationExperiment") as? Bool == true {
+                    BackgroundRefreshExperimentSection()
+                }
+                #endif
                 tvPresentationSection
                 PartnerSharingSettingsSection(app: .yaoShi)
                 storageSection

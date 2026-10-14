@@ -60,6 +60,17 @@ plistlib.dump({
 }, open(sys.argv[1],'wb'))
 PY
 
+if [ "${YAOSHI_BACKGROUND_LOCATION_EXPERIMENT:-0}" = "1" ]; then
+  python3 - "$APP/Info.plist" <<'PY'
+import plistlib, sys
+path = sys.argv[1]
+with open(path, 'rb') as f: info = plistlib.load(f)
+info['UIBackgroundModes'] = ['location']
+info['NSLocationWhenInUseUsageDescription'] = '经你选择，使用定位服务进行最长15分钟的后台浓度刷新实验；不保存或上传坐标，可随时停止。'
+info['YaoShiBackgroundLocationExperiment'] = True
+with open(path, 'wb') as f: plistlib.dump(info, f)
+PY
+fi
 python3 "$ROOT/scripts/stamp_version.py" "$APP/Info.plist"
 python3 "$ROOT/scripts/stamp_version.py" "$EXT/Info.plist" --parent "$APP/Info.plist"
 
