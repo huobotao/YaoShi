@@ -115,14 +115,18 @@ struct TodayView: View {
 
                     VStack(alignment: .leading, spacing: 10) {
                         Text("距上次服药已过").font(.system(size: 13)).foregroundStyle(YS.dim)
-                        Text(Fmt.elapsed(secs))
-                            .font(.system(size: 40, weight: .bold, design: .rounded))
-                            .monospacedDigit()
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.55)
-                            .foregroundStyle(YS.text)
-                            .accessibilityIdentifier("timeSinceLastDose")
-                            .accessibilityLabel("距上次服药已过 " + Fmt.elapsed(secs))
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(Fmt.elapsed(secs))
+                                .font(.system(size: 40, weight: .bold, design: .rounded))
+                                .monospacedDigit()
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.55)
+                                .foregroundStyle(YS.text)
+                                .accessibilityIdentifier("timeSinceLastDose")
+                                .accessibilityLabel("距上次服药已过 " + Fmt.elapsed(secs))
+                            Spacer(minLength: 0)
+                            InventoryInlineButton()
+                        }
 
                         HStack(spacing: 8) {
                             Label(phase == .over ? "估算时段结束" : "参考：" + phase.label, systemImage: phase.symbol)
@@ -189,8 +193,12 @@ struct TodayView: View {
                 }
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("还没有任何服药记录")
-                        .font(.system(size: 20, weight: .bold))
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("还没有任何服药记录")
+                            .font(.system(size: 20, weight: .bold))
+                        Spacer(minLength: 0)
+                        InventoryInlineButton()
+                    }
                     Text("按下面那个大按钮，就记下第一次。以后每次吃完按一下就行。")
                         .font(.system(size: 13)).foregroundStyle(YS.dim)
                 }
