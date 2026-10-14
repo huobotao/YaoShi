@@ -82,18 +82,8 @@ cat > "$APP/Info.plist" <<'PLIST'
 </dict>
 </plist>
 PLIST
-if [ "${YAOSHI_BACKGROUND_LOCATION_EXPERIMENT:-1}" = "1" ]; then
-  python3 - "$APP/Info.plist" <<'PY'
-import plistlib, sys
-path = sys.argv[1]
-with open(path, 'rb') as f: info = plistlib.load(f)
-info['UIBackgroundModes'] = ['location']
-info['NSLocationWhenInUseUsageDescription'] = '使用定位服务持续进行后台浓度刷新；不保存或上传坐标，可在设置中关闭。'
-info['NSLocationAlwaysAndWhenInUseUsageDescription'] = '允许药时在后台使用定位服务持续刷新浓度；不保存或上传坐标，可在设置中关闭。实际运行受系统调度影响。'
-info['YaoShiBackgroundLocationExperiment'] = True
-with open(path, 'wb') as f: plistlib.dump(info, f)
-PY
-fi
+# Location keepalive is intentionally excluded from shipped builds.
+# ActivityKit remains enabled independently of background location.
 python3 "$ROOTDIR/scripts/stamp_version.py" "$APP/Info.plist"
 
 echo "==> 编译并嵌入图标"
