@@ -346,121 +346,91 @@ struct YaoShiWidget: Widget {
 
 @available(iOS 16.2, *)
 struct DoseLiveActivity: Widget {
-    private func ratio(_ st: DoseAttributes.ContentState) -> String {
+    private func ratio(_ st: DoseAttributes.ContentState, stale: Bool) -> String {
         guard let value = st.concentrationRatio, value.isFinite else { return "—×" }
-        return value < 0.01 ? "<0.01×" : String(format: "%.2f×", value)
+        let number = value < 0.01 ? "<0.01×" : String(format: "%.2f×", value)
+        return (stale ? "旧" : "") + number
     }
 
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: DoseAttributes.self) { context in
-            summary(context.state)
+            summary(context.state, stale: context.isStale)
                 .padding(14)
                 .activityBackgroundTint(Color.black.opacity(0.55))
                 .activitySystemActionForegroundColor(W.teal)
         } dynamicIsland: { context in
             let st = context.state
+            let stale = context.isStale
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    peak(st, large: false)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("相对浓度 · 估算").font(.system(size: 10)).foregroundStyle(W.dim)
+                        Text(ratio(st, stale: stale))
+                            .font(.system(size: 24, weight: .bold, design: .rounded))
+                            .monospacedDigit().foregroundStyle(W.teal)
+                            .lineLimit(1).minimumScaleFactor(0.6)
+                    }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    concentrationSnapshot(st)
+                    peak(st, stale: stale)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    details(st)
+                    details(st, stale: stale)
                 }
             } compactLeading: {
-                Text((context.isStale ? "旧" : "≈") + ratio(st))
-                    .font(.system(size: 11, weight: .semibold)).monospacedDigit()
-                    .lineLimit(1).minimumScaleFactor(0.7)
-                    .foregroundStyle(context.isStale ? W.dim : W.teal)
-                    .accessibilityLabel(Fmt2.hm(st.refreshedAt) + " 时浓度估算 " + ratio(st))
+                trendArrow(st, isStale: stale)
             } compactTrailing: {
-                compactPeak(st, minimal: false)
+                Text(ratio(st, stale: stale))
+                    .font(.system(size: 13, weight: .semibold)).monospacedDigit()
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                    .foregroundStyle(W.teal)
+                    .accessibilityLabel(stale ? "上次浓度估算 " + ratio(st, stale: true) : "估算相对浓度 " + ratio(st, stale: false))
             } minimal: {
-                compactPeak(st, minimal: true)
+                Text(ratio(st, stale: stale))
+                    .font(.system(size: 10, weight: .semibold)).monospacedDigit()
+                    .lineLimit(1).minimumScaleFactor(0.5).foregroundStyle(W.teal)
             }
             .widgetURL(URL(string: "yaoshi://dashboard"))
             .keylineTint(W.teal)
         }
     }
 
-    /// Fixed endpoints let the system tick while the app is suspended. The closed
-    /// range bounds the countdown; leave pauseTime nil so it runs instead of freezing.
-    /// Zero is the predicted time, not evidence of a new reading.
-    private func countdown(_ interval: ClosedRange<Date>) -> Text {
-        Text(timerInterval: interval, countsDown: true, showsHours: true)
+    @ViewBuilder
+    private func trendArrow(_ st: DoseAttributes.ContentState, isStale: Bool) -> some View {
+        if let slope = st.plasmaSlopePerHour, slope.isFinite, !isStale {
+            Image(systemName: "arrow.right")
+                .font(.system(size: 15, weight: .bold))
+                .rotationEffect(.degrees(PlasmaTrend.angleDegrees(slope: slope)))
+                .frame(width: 22, height: 22)
+                .foregroundStyle(W.teal)
+                .accessibilityLabel(abs(slope) < 1e-9 ? "浓度平稳" : slope > 0 ? "浓度上升" : "浓度下降")
+                .accessibilityValue(String(format: "每小时变化 %+.3f 倍", slope))
+        } else {
+            Image(systemName: "questionmark")
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 22, height: 22)
+                .foregroundStyle(W.dim)
+                .accessibilityLabel("趋势等待更新")
+        }
     }
 
     @ViewBuilder
-    private func compactPeak(_ st: DoseAttributes.ContentState, minimal: Bool) -> some View {
-        if let interval = st.predictedPeakTimerInterval {
-            countdown(interval)
-                .font(.system(size: minimal ? 8 : 12, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-                .frame(width: minimal ? 36 : 64, alignment: .trailing)
-                .multilineTextAlignment(.trailing)
-                .foregroundStyle(W.teal)
-                .accessibilityLabel("预计达峰倒计时，归零表示预计时间已到")
-        } else if let last = st.lastDoseAt {
-            HStack(spacing: 2) {
-                if !minimal { Text("已过").font(.system(size: 8)) }
-                Text(last, style: .timer)
-                    .font(.system(size: minimal ? 8 : 11, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .frame(width: minimal ? 36 : 60, alignment: .trailing)
-                    .multilineTextAlignment(.trailing)
-            }
-            .foregroundStyle(W.teal)
-            .accessibilityLabel("距上次服药已过时间，当前暂无后续峰值预测")
-        } else {
-            Text("暂无")
-                .font(.system(size: minimal ? 10 : 12, weight: .semibold))
-                .foregroundStyle(W.dim)
-                .accessibilityLabel("暂无服药记录或峰值预测")
-        }
-    }
-
-    private func peak(_ st: DoseAttributes.ContentState, large: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(st.predictedPeakTimerInterval != nil ? "药时 · 预计达峰" : "药时 · 距上次服药")
-                .font(.system(size: 11)).foregroundStyle(W.dim)
-            if let interval = st.predictedPeakTimerInterval {
-                countdown(interval)
-                    .font(.system(size: large ? 32 : 24, weight: .bold, design: .rounded))
-                    .monospacedDigit().foregroundStyle(W.teal)
-                    .frame(width: large ? 180 : 136, alignment: .leading)
-                    .multilineTextAlignment(.leading)
-                Text("预计 " + Fmt2.hm(interval.upperBound))
-                    .font(.system(size: 10)).foregroundStyle(W.dim)
+    private func peak(_ st: DoseAttributes.ContentState, stale: Bool) -> some View {
+        VStack(alignment: .trailing, spacing: 2) {
+            if !stale, let at = st.predictedPeakAt, at > st.refreshedAt {
+                Text("预计距峰").font(.system(size: 10)).foregroundStyle(W.dim)
+                Text(timerInterval: st.refreshedAt...at, countsDown: true)
+                    .font(.system(size: 19, weight: .semibold, design: .rounded))
+                    .monospacedDigit().frame(maxWidth: 96)
+                Text("约 " + Fmt2.hm(at)).font(.system(size: 9)).foregroundStyle(W.dim)
             } else {
-                if let last = st.lastDoseAt {
-                    Text(last, style: .timer)
-                        .font(.system(size: large ? 28 : 23, weight: .bold, design: .rounded))
-                        .monospacedDigit().foregroundStyle(W.teal)
-                        .frame(width: large ? 180 : 136, alignment: .leading)
-                        .multilineTextAlignment(.leading)
-                }
-                Text(st.lastDoseAt == nil ? "暂无服药记录" : "已过时间 · 暂无后续峰值")
-                    .font(.system(size: 10)).foregroundStyle(W.dim)
+                Text(stale ? "估算待刷新" : "暂无后续峰值")
+                    .font(.system(size: 11)).foregroundStyle(W.dim)
             }
         }
     }
 
-    private func concentrationSnapshot(_ st: DoseAttributes.ContentState) -> some View {
-        VStack(alignment: .trailing, spacing: 3) {
-            Text("浓度快照 · 估算").font(.system(size: 10)).foregroundStyle(W.dim)
-            Text(ratio(st))
-                .font(.system(size: 20, weight: .semibold, design: .rounded))
-                .monospacedDigit().foregroundStyle(W.dim)
-                .lineLimit(1).minimumScaleFactor(0.6)
-            Text(Fmt2.hm(st.refreshedAt) + " 时估算")
-                .font(.system(size: 10)).foregroundStyle(W.dim)
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    private func details(_ st: DoseAttributes.ContentState) -> some View {
+    private func details(_ st: DoseAttributes.ContentState, stale: Bool) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             if let last = st.lastDoseAt {
                 HStack(spacing: 4) {
@@ -469,15 +439,9 @@ struct DoseLiveActivity: Widget {
                     Spacer(minLength: 0)
                 }.font(.system(size: 10)).foregroundStyle(W.dim)
             }
-            if st.predictedPeakTimerInterval != nil {
-                Text("归零仅代表预计时点 · 服药记录变更后需重新估算")
-                    .font(.system(size: 9)).foregroundStyle(W.dim)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
             HStack {
-                Text("浓度为标注时刻的估算 · 1× = 单次 50 mg 模型峰值")
+                Text(stale ? "\(Fmt2.hm(st.refreshedAt)) 时估算 · 点右侧刷新" : "1× = 单次 50 mg 模型峰值")
                     .font(.system(size: 9)).foregroundStyle(W.dim)
-                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 4)
                 Button(intent: RefreshDoseActivityIntent()) {
                     Label("刷新", systemImage: "arrow.clockwise")
@@ -485,19 +449,27 @@ struct DoseLiveActivity: Widget {
                 }
                 .buttonStyle(.bordered)
                 .tint(W.teal)
-                .accessibilityLabel("按本机记录重新估算达峰时间和浓度")
+                .accessibilityLabel("按本机记录刷新浓度估算")
             }
         }
     }
 
-    private func summary(_ st: DoseAttributes.ContentState) -> some View {
+    private func summary(_ st: DoseAttributes.ContentState, stale: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top) {
-                peak(st, large: true)
-                Spacer(minLength: 8)
-                concentrationSnapshot(st)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 5) {
+                        trendArrow(st, isStale: stale)
+                        Text("药时 · 相对浓度估算").font(.system(size: 11)).foregroundStyle(W.dim)
+                    }
+                    Text(ratio(st, stale: stale))
+                        .font(.system(size: 32, weight: .bold, design: .rounded))
+                        .monospacedDigit().foregroundStyle(W.teal)
+                }
+                Spacer()
+                peak(st, stale: stale)
             }
-            details(st)
+            details(st, stale: stale)
         }
     }
 }
