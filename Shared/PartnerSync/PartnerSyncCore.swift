@@ -9,9 +9,10 @@ enum PartnerApp: String, Codable, CaseIterable, Hashable {
     case beiYun = "beiyun"
     case yaoShi = "yaoshi"
 
-    var urlScheme: String { self == .beiYun ? "beiyun-partner" : "yaoshi-partner" }
-    var keychainService: String { "com.richardhuo.\(rawValue).partner-sharing.\(PartnerBuildConfiguration.role.rawValue)" }
-    var keychainGroup: String { "P272ZF8FA9.com.richardhuo.\(rawValue).partner.\(PartnerBuildConfiguration.role.rawValue)" }
+    var urlScheme: String { self == .beiYun ? "beiyun-partner" : "yaoshi-21012r1-partner" }
+    private var storageNamespace: String { self == .yaoShi ? "yaoshi.archive.v21012r1" : rawValue }
+    var keychainService: String { "com.richardhuo.\(storageNamespace).partner-sharing.\(PartnerBuildConfiguration.role.rawValue)" }
+    var keychainGroup: String { "P272ZF8FA9.com.richardhuo.\(storageNamespace).partner.\(PartnerBuildConfiguration.role.rawValue)" }
 
     static var current: PartnerApp {
         #if BEIYUN_APP || BEIYUN_PARTNER

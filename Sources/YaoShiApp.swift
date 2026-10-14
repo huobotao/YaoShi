@@ -47,11 +47,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ app: UIApplication, open url: URL,
                      options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
         guard !LiveActivityReadback.requested else { return false }
-        if url.scheme == "yaoshi-partner" {
+        if url.scheme == "yaoshi-21012r1-partner" {
             Task { @MainActor in await PartnerSharingCoordinator.shared.acceptInvite(url) }
             return true
         }
-        guard url.scheme == "yaoshi" else { return false }
+        guard url.scheme == "yaoshi-21012r1" else { return false }
         let action = url.host ?? url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         if action == "take" {
             NotificationCenter.default.post(name: Self.takeNotification, object: nil)
