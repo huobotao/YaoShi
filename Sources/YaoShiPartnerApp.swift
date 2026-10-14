@@ -15,7 +15,7 @@ final class YaoShiPartnerAppDelegate: NSObject, UIApplicationDelegate, UNUserNot
 
     func application(_ app: UIApplication, open url: URL,
                      options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
-        guard url.scheme == "yaoshi-21012r2-partner" else { return false }
+        guard url.scheme == "yaoshi-21012r3-partner" else { return false }
         Task { @MainActor in
             await PartnerSharingCoordinator.shared.acceptInvite(url)
 #if YAOSHI_REMOTE_PUSH

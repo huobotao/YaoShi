@@ -1,9 +1,11 @@
 {
-  "variant": "2.10.12-R2",
+  "variant": "2.10.12-R3",
   "baseCommit": "423dc26765d67b513221c3f5feccbf7939c00d8c",
   "baseTag": "v2.10.12-build41",
-  "bundleIdentifier": "com.richardhuo.yaoshi.archive.v21012r2",
-  "displayName": "药时12·R2",
-  "purpose": "Side-by-side restoration of the continuous background refresh version",
-  "dataPolicy": "Isolated keychain namespaces; local backup copy only; no original-app writes"
+  "bundleIdentifier": "com.richardhuo.yaoshi.archive.v21012r3",
+  "displayName": "药时后台·R3",
+  "purpose": "Independent iPhone 17 Pro background-session candidate with lifecycle diagnostics; requires real-device acceptance",
+  "dataPolicy": "Isolated keychain namespaces; local backup copy only; no original-app writes",
+  "parentCommit": "e8e1eea8d24ea2e50ea19f797c14d1665a74b3b7",
+  "targetDevice": "iPhone 17 Pro only"
 }
