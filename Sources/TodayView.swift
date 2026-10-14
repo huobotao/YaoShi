@@ -66,6 +66,7 @@ struct TodayView: View {
         if width >= 900 {
             HStack(alignment: .top, spacing: 18) {
                 VStack(spacing: 14) {
+                    InventoryCard()
                     gapCard
                     DoseWindowCard()
                     quickButton
@@ -85,6 +86,7 @@ struct TodayView: View {
             .frame(maxWidth: 1168)
         } else {
             VStack(spacing: 14) {
+                InventoryCard()
                 gapCard
                 DoseWindowCard()
                 quickButton
