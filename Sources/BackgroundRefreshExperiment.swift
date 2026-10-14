@@ -141,7 +141,11 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
 
     @discardableResult
     private func expireIfNeeded() -> Bool {
-        guard let deadlineUptime, ProcessInfo.processInfo.systemUptime >= deadlineUptime else { return false }
+        guard let deadlineUptime else { return false }
+        // Check both clocks: wall time includes device sleep; uptime also bounds a
+        // running experiment if the user adjusts the wall clock backwards.
+        guard ProcessInfo.processInfo.systemUptime >= deadlineUptime ||
+                (endsAt.map { Date() >= $0 } ?? false) else { return false }
         stopWithStatus("十五分钟实验已到期并停止", event: "expired")
         return true
     }
