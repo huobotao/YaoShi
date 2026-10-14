@@ -4,19 +4,18 @@ import UIKit
 import CoreLocation
 import Combine
 
-/// An explicitly started, local-only diagnostic experiment. Location delivery may
+/// Default-enabled, local-only background refresh. Location delivery may
 /// keep this process runnable, but neither delivery nor a 30-second cadence is guaranteed.
 /// No coordinate, medication value, identifier or token is retained by this service.
 @MainActor
 final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationManagerDelegate {
     static let shared = BackgroundRefreshExperiment()
 
-    @Published private(set) var statusText = "实验未开启"
+    @Published private(set) var statusText = "后台刷新未开启"
     @Published private(set) var isRunning = false
-    @Published private(set) var endsAt: Date?
     @Published private(set) var needsSettings = false
     @Published private(set) var authorizationStatus: CLAuthorizationStatus = .notDetermined
-    @Published private(set) var alwaysAuthorizationMessage = "可单独申请始终允许定位；授权本身不会启动实验。"
+    @Published private(set) var alwaysAuthorizationMessage = "后台刷新默认开启；可申请始终允许定位。"
     @Published private(set) var pendingAlwaysAuthorization = false
 
     var authorizationText: String {
@@ -42,8 +41,9 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
     private var publish: (@MainActor () -> Void)?
     private var timer: Timer?
     private var pendingStart = false
+    private let enabledKey = "backgroundRefreshEnabled"
+    var isEnabled: Bool { UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true }
     private var locationStarted = false
-    private var deadlineUptime: TimeInterval?
     private var lastPublishUptime: TimeInterval?
     private var foregroundPublishes = 0
     private var backgroundPublishes = 0
@@ -51,13 +51,14 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
 
     private override init() {
         super.init()
-        // Deliberately do not restore a running experiment or request permission at launch.
+        // Activation occurs once UIKit is foreground and the publisher is configured.
     }
 
     /// The caller supplies a weak Store capture, so this singleton never owns a Store.
     func configure(publish: @escaping @MainActor () -> Void) {
         guard isExperimentBuild else { return }
         self.publish = publish
+        ensureLifecycle()
     }
 
     func start(publish: @escaping @MainActor () -> Void) {
@@ -87,14 +88,14 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
         case .notDetermined:
             pendingAlwaysAuthorization = true
             alwaysAuthorizationMessage = "请先允许使用 App 期间定位，再点一次“申请始终允许定位”。"
-            manager.requestWhenInUseAuthorization()
+            if !pendingStart { manager.requestWhenInUseAuthorization() }
         case .authorizedWhenInUse:
             pendingAlwaysAuthorization = false
             alwaysAuthorizationMessage = "已请求升级为始终允许；若系统没有弹窗，请在系统设置的定位权限中查看。选择“允许一次”时可能无法直接升级。"
             manager.requestAlwaysAuthorization()
         case .authorizedAlways:
             pendingAlwaysAuthorization = false
-            alwaysAuthorizationMessage = "已允许始终定位；仍需手动开始实验，且不保证后台持续运行。"
+            alwaysAuthorizationMessage = "已允许始终定位；后台刷新默认开启，无自动停止时限，系统仍可能暂停运行。"
         case .denied, .restricted:
             alwaysAuthorizationMessage = "请打开系统设置查看定位权限。"
         @unknown default:
@@ -102,20 +103,21 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
         }
     }
 
-    /// Call only from the user's explicit experiment button while the app is foreground.
+    /// Start automatically in foreground or from the local Settings control.
     func start() {
-        guard isExperimentBuild else { statusText = "此版本未启用定位刷新实验"; return }
+        guard isExperimentBuild else { statusText = "此版本未启用后台刷新"; return }
+        UserDefaults.standard.set(true, forKey: enabledKey)
         guard !isRunning else { return }
         guard UIApplication.shared.applicationState == .active else {
-            statusText = "请在药时前台点击开始实验"
+            statusText = "等待药时回到前台自动开启"
             return
         }
-        guard publish != nil else { statusText = "实验尚未连接刷新入口"; return }
+        guard publish != nil else { statusText = "后台刷新尚未连接刷新入口"; return }
         let modes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String] ?? []
         guard modes.contains("location"),
               let usage = Bundle.main.object(forInfoDictionaryKey: "NSLocationWhenInUseUsageDescription") as? String,
               !usage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            statusText = "此版本未配置后台定位实验权限"
+            statusText = "此版本未配置后台定位权限"
             return
         }
         guard CLLocationManager.locationServicesEnabled() else {
@@ -128,42 +130,42 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
         isRunning = true
         switch authorizationStatus {
         case .notDetermined:
-            statusText = "等待定位授权；允许后开始十五分钟实验"
+            statusText = "等待定位授权；允许后自动开启后台刷新"
             manager.requestWhenInUseAuthorization()
         case .authorizedWhenInUse, .authorizedAlways:
             beginSessionIfForeground()
         case .denied, .restricted:
-            stopWithStatus("定位权限未获允许，实验未启动", event: "authorizationDenied")
+            stopWithStatus("定位权限未获允许，后台刷新未启动", event: "authorizationDenied")
             needsSettings = true
         @unknown default:
-            stopWithStatus("当前定位权限不支持此实验", event: "authorizationUnknown")
+            stopWithStatus("当前定位权限不支持此后台刷新", event: "authorizationUnknown")
         }
     }
 
     func stop() {
-        stopWithStatus("实验已停止", event: "userStopped")
+        UserDefaults.standard.set(false, forKey: enabledKey)
+        stopWithStatus("后台刷新已关闭", event: "userStopped")
     }
 
-    /// Call on scene/lifecycle changes. Returning to foreground also enforces an
-    /// expired deadline before any publish; a suspended process cannot run timer code.
+    /// Resume the default-enabled service after launch or permission restoration.
     func ensureLifecycle() {
         guard isExperimentBuild else { return }
         authorizationStatus = manager.authorizationStatus
         needsSettings = !CLLocationManager.locationServicesEnabled() || authorizationStatus == .denied || authorizationStatus == .restricted
         updateAlwaysAuthorizationMessage()
-        if expireIfNeeded() { return }
         if isRunning && needsSettings {
-            stopWithStatus("定位服务或权限不可用，实验停止", event: "locationUnavailable")
+            stopWithStatus("定位服务或权限不可用，后台刷新停止", event: "locationUnavailable")
             return
         }
         if pendingStart { beginSessionIfForeground() }
+        else if isEnabled && !isRunning && !needsSettings && publish != nil && UIApplication.shared.applicationState == .active { start() }
     }
 
     private func beginSessionIfForeground() {
         guard pendingStart,
               authorizationStatus == .authorizedWhenInUse || authorizationStatus == .authorizedAlways else { return }
         guard UIApplication.shared.applicationState == .active else {
-            statusText = "已获定位权限，等待药时回到前台开始实验"
+            statusText = "已获定位权限，等待药时回到前台自动开启"
             return
         }
         pendingStart = false
@@ -171,8 +173,6 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
         needsSettings = false
         foregroundPublishes = 0; backgroundPublishes = 0; publishEvents = []
         lastPublishUptime = nil
-        deadlineUptime = ProcessInfo.processInfo.systemUptime + 15 * 60
-        endsAt = Date().addingTimeInterval(15 * 60)
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
         manager.distanceFilter = kCLDistanceFilterNone
         manager.activityType = .other
@@ -180,7 +180,7 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
         manager.allowsBackgroundLocationUpdates = true
         manager.showsBackgroundLocationIndicator = true
         manager.startUpdatingLocation()
-        statusText = "十五分钟定位刷新实验运行中；系统可能暂停或降低频率"
+        statusText = "后台刷新运行中（无时限）；系统可能暂停或降低频率"
         let clock = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.publishIfDue(source: "timer") }
         }
@@ -190,22 +190,11 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
         publishIfDue(source: "started")
     }
 
-    @discardableResult
-    private func expireIfNeeded() -> Bool {
-        guard let deadlineUptime else { return false }
-        // Check both clocks: wall time includes device sleep; uptime also bounds a
-        // running experiment if the user adjusts the wall clock backwards.
-        guard ProcessInfo.processInfo.systemUptime >= deadlineUptime ||
-                (endsAt.map { Date() >= $0 } ?? false) else { return false }
-        stopWithStatus("十五分钟实验已到期并停止", event: "expired")
-        return true
-    }
-
     private func publishIfDue(source: String) {
-        guard isRunning, locationStarted, !expireIfNeeded() else { return }
+        guard isRunning, locationStarted else { return }
         let uptime = ProcessInfo.processInfo.systemUptime
         if let lastPublishUptime, uptime - lastPublishUptime < 30 { return }
-        guard let publish else { stopWithStatus("刷新入口已断开，实验停止", event: "missingPublisher"); return }
+        guard let publish else { stopWithStatus("刷新入口已断开，后台刷新停止", event: "missingPublisher"); return }
         lastPublishUptime = uptime
         let background = UIApplication.shared.applicationState == .background
         publish()
@@ -224,7 +213,7 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
             manager.allowsBackgroundLocationUpdates = false
         }
         locationStarted = false; pendingStart = false; isRunning = false
-        deadlineUptime = nil; endsAt = nil; lastPublishUptime = nil
+        lastPublishUptime = nil
         statusText = status
         record(event: event)
     }
@@ -238,16 +227,16 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
         needsSettings = !CLLocationManager.locationServicesEnabled() || authorizationStatus == .denied || authorizationStatus == .restricted
         updateAlwaysAuthorizationMessage()
         if isRunning && needsSettings {
-            stopWithStatus("定位权限已撤销，实验停止", event: "authorizationRevoked")
-        } else if pendingStart {
-            beginSessionIfForeground()
+            stopWithStatus("定位权限已撤销，后台刷新停止", event: "authorizationRevoked")
+        } else {
+            ensureLifecycle()
         }
     }
 
     private func updateAlwaysAuthorizationMessage() {
         if authorizationStatus == .authorizedAlways {
             pendingAlwaysAuthorization = false
-            alwaysAuthorizationMessage = "已允许始终定位；仍需手动开始实验，且不保证后台持续运行。"
+            alwaysAuthorizationMessage = "已允许始终定位；后台刷新默认开启，无自动停止时限，系统仍可能暂停运行。"
         } else if pendingAlwaysAuthorization && authorizationStatus == .authorizedWhenInUse {
             alwaysAuthorizationMessage = "已获使用 App 期间定位权限。请再点一次“申请始终允许定位”继续；不会自动再次弹窗。"
         } else if authorizationStatus == .denied || authorizationStatus == .restricted {
@@ -267,13 +256,12 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
     }
 
     private func locationFailed(denied: Bool) {
-        if expireIfNeeded() { return }
         guard isRunning else { return }
         if denied {
             needsSettings = true
-            stopWithStatus("系统拒绝定位，实验停止", event: "locationDenied")
+            stopWithStatus("系统拒绝定位，后台刷新停止", event: "locationDenied")
         } else {
-            statusText = "实验运行中，暂未取得定位回调；刷新频率不保证"
+            statusText = "后台刷新运行中，暂未取得定位回调；刷新频率不保证"
             record(event: "locationCallbackUnavailable")
         }
     }
@@ -302,7 +290,7 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
             try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         } catch {
-            // Diagnostic disk failures must not expose coordinates or extend the session.
+            // Diagnostic disk failures must not expose coordinates or interrupt refresh.
         }
     }
 }
