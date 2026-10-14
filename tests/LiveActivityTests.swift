@@ -23,6 +23,24 @@ import Foundation
     static func main() async throws {
         let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
         let hour: TimeInterval = 3600
+        check(!DoseActivityRenewalPolicy.shouldReplace(allowCreation: false, isForeground: false,
+            pushRequiresReplacement: true, startedAt: now.addingTimeInterval(-9 * hour), now: now),
+            "background model change preserves existing activity instead of ending it")
+        check(!DoseActivityRenewalPolicy.shouldReplace(allowCreation: true, isForeground: false,
+            pushRequiresReplacement: true, startedAt: nil, now: now),
+            "foreground permission captured before suspension cannot authorize replacement")
+        check(DoseActivityRenewalPolicy.shouldReplace(allowCreation: true, isForeground: true,
+            pushRequiresReplacement: false, startedAt: now.addingTimeInterval(-7.5 * hour), now: now),
+            "foreground proactively renews a card near its eight-hour limit")
+        check(!DoseActivityRenewalPolicy.shouldReplace(allowCreation: true, isForeground: true,
+            pushRequiresReplacement: false, startedAt: now.addingTimeInterval(-hour), now: now),
+            "young activities remain unchanged")
+        check(!DoseActivityRenewalPolicy.shouldReplace(allowCreation: true, isForeground: true,
+            pushRequiresReplacement: false, startedAt: nil, now: now),
+            "unknown activity age does not invent an expiry")
+        check(DoseActivityRenewalPolicy.shouldReplace(allowCreation: true, isForeground: true,
+            pushRequiresReplacement: true, startedAt: nil, now: now),
+            "foreground push model changes still replace safely")
         let doses = [Dose(at: now.addingTimeInterval(-4 * hour), mg: 80),
                      Dose(at: now.addingTimeInterval(-6 * hour), mg: 40),
                      Dose(at: now.addingTimeInterval(-72 * hour), mg: 40)]

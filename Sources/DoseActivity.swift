@@ -32,6 +32,16 @@ final class DoseActivityWorkQueue<Input> {
     }
 }
 
+/// Replacement requires foreground eligibility. Updates never reset the system's eight-hour lifetime.
+enum DoseActivityRenewalPolicy {
+    static func shouldReplace(allowCreation: Bool, isForeground: Bool,
+                              pushRequiresReplacement: Bool, startedAt: Date?, now: Date) -> Bool {
+        guard allowCreation && isForeground else { return false }
+        let age = startedAt.map { now.timeIntervalSince($0) }
+        return pushRequiresReplacement || (age.map { $0 >= 7.5 * 3600 } ?? false)
+    }
+}
+
 /// 常驻实时活动（锁屏 + 灵动岛）的启动、更新与收回。只在主 App 里编译。
 ///
 /// 系统规则：一条实时活动最多活跃 8 小时，之后转入锁屏最多再留 4 小时，然后自动移除；
@@ -43,6 +53,23 @@ final class DoseActivityWorkQueue<Input> {
 enum DoseActivityController {
 
     static var isSupported: Bool { ActivityAuthorizationInfo().areActivitiesEnabled }
+    private static var stateObservers: [String: Task<Void, Never>] = [:]
+
+    private static func observe(_ activity: Activity<DoseAttributes>) {
+        guard stateObservers[activity.id] == nil else { return }
+        stateObservers[activity.id] = Task { @MainActor in
+            for await state in activity.activityStateUpdates {
+                guard !Task.isCancelled else { return }
+                report("stateChanged:" + String(describing: state))
+                if state == .ended || state == .dismissed {
+                    UserDefaults.standard.removeObject(forKey: "liveActivityStartedAt." + activity.id)
+                    stateObservers.removeValue(forKey: activity.id)
+                    return
+                }
+            }
+            stateObservers.removeValue(forKey: activity.id)
+        }
+    }
 
     static var running: Activity<DoseAttributes>? {
         Activity<DoseAttributes>.activities.first {
@@ -135,17 +162,26 @@ enum DoseActivityController {
         case let .refresh(snap, allowCreation):
             guard isSupported else { report("notAuthorized"); return }
             var retained = running
-            if let old = retained,
-               LiveActivityPush.requiresReplacement(old, snapshot: snap) ||
-                (LiveActivityPush.configured && old.pushToken == nil && allowCreation &&
-                 !(UserDefaults.standard.stringArray(forKey: "pushRequestedActivityIDs") ?? []).contains(old.id)) {
-                await old.end(nil, dismissalPolicy: .immediate)
-                LiveActivityPush.withdraw(old.id)
-                retained = nil
+            var replacing: Activity<DoseAttributes>?
+            if let old = retained {
+                observe(old)
+                let key = "liveActivityStartedAt." + old.id
+                let stored = UserDefaults.standard.object(forKey: key) as? Double
+                let pushNeedsReplacement = LiveActivityPush.requiresReplacement(old, snapshot: snap) ||
+                    (LiveActivityPush.configured && old.pushToken == nil &&
+                     !(UserDefaults.standard.stringArray(forKey: "pushRequestedActivityIDs") ?? []).contains(old.id))
+                if DoseActivityRenewalPolicy.shouldReplace(allowCreation: allowCreation,
+                        isForeground: UIApplication.shared.applicationState == .active,
+                        pushRequiresReplacement: pushNeedsReplacement,
+                        startedAt: stored.map(Date.init(timeIntervalSince1970:)), now: Date()) {
+                    // Keep the old card until a replacement was actually accepted.
+                    replacing = old
+                    retained = nil
+                }
             }
             // Await removal before either updating or requesting, so repeated refreshes
             // cannot race with cleanup or create multiple lock-screen cards.
-            for activity in Activity<DoseAttributes>.activities where activity.id != retained?.id {
+            for activity in Activity<DoseAttributes>.activities where activity.id != retained?.id && activity.id != replacing?.id {
                 await activity.end(nil, dismissalPolicy: .immediate)
                 LiveActivityPush.withdraw(activity.id)
             }
@@ -165,6 +201,13 @@ enum DoseActivityController {
                 do {
                     let activity = try Activity.request(attributes: DoseAttributes(title: "药时"),
                                              content: content, pushType: LiveActivityPush.configured ? .token : nil)
+                    observe(activity)
+                    UserDefaults.standard.set(now.timeIntervalSince1970, forKey: "liveActivityStartedAt." + activity.id)
+                    if let old = replacing {
+                        await old.end(nil, dismissalPolicy: .immediate)
+                        LiveActivityPush.withdraw(old.id)
+                        UserDefaults.standard.removeObject(forKey: "liveActivityStartedAt." + old.id)
+                    }
                     if LiveActivityPush.configured {
                         var ids = UserDefaults.standard.stringArray(forKey: "pushRequestedActivityIDs") ?? []
                         ids.append(activity.id)
@@ -173,6 +216,8 @@ enum DoseActivityController {
                     LiveActivityPush.maintain(activity, snapshot: snap)
                     report("started")
                 } catch {
+                    // Failed renewal must not remove the working card.
+                    if let old = replacing { await old.update(content) }
                     report("requestFailed", error: String(describing: error))
                 }
             }
@@ -191,6 +236,10 @@ enum DoseActivityController {
                 var item: [String: Any] = ["id": activity.id,
                     "state": String(describing: activity.activityState),
                     "refreshedAt": state.refreshedAt.timeIntervalSince1970]
+                if let stale = activity.content.staleDate { item["staleDateUnix"] = stale.timeIntervalSince1970 }
+                if let started = UserDefaults.standard.object(forKey: "liveActivityStartedAt." + activity.id) as? Double {
+                    item["startedAtUnix"] = started
+                }
                 if let slope = state.plasmaSlopePerHour {
                     item["plasmaSlopePerHour"] = slope
                     item["trendAngleDegrees"] = PlasmaTrend.angleDegrees(slope: slope)
