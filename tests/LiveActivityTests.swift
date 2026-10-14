@@ -136,6 +136,55 @@ import Foundation
 
         check(state.predictedPeakAt == DoseEngine.nextLocalPlasmaPeak(doses: doses, now: now, curve: snapshot.plasmaCurve),
               "activity peak agrees with same records and model parameters")
+        // The native timer owns elapsed time; the model supplies an immutable deadline.
+        var timerState = state
+        timerState.refreshedAt = now
+        timerState.predictedPeakAt = now.addingTimeInterval(5 * hour)
+        let timerInterval = timerState.predictedPeakTimerInterval
+        check(timerInterval?.lowerBound == now, "countdown starts at the prediction evaluation time")
+        check(timerInterval?.upperBound == timerState.predictedPeakAt, "countdown ends at the fixed predicted peak")
+        check(DoseActivityController.nextStale(for: timerState, now: now) < timerInterval!.upperBound,
+              "snapshot can become stale before the independent countdown deadline")
+        let cachedTimerState = try JSONDecoder().decode(DoseAttributes.ContentState.self,
+            from: JSONEncoder().encode(timerState))
+        check(cachedTimerState.predictedPeakTimerInterval == timerInterval,
+              "cached content preserves the timer interval without a new wall-clock calculation")
+        var elapsedTimer = timerState
+        elapsedTimer.refreshedAt = Date(timeIntervalSinceReferenceDate: 100)
+        elapsedTimer.predictedPeakAt = Date(timeIntervalSinceReferenceDate: 200)
+        check(elapsedTimer.predictedPeakTimerInterval?.upperBound == elapsedTimer.predictedPeakAt,
+              "expired cached deadline remains available for native timer to display zero")
+        timerState.predictedPeakAt = now
+        check(timerState.predictedPeakTimerInterval == nil, "zero-duration prediction never creates an invalid timer range")
+        timerState.predictedPeakAt = now.addingTimeInterval(-1)
+        check(timerState.predictedPeakTimerInterval == nil, "already-past prediction at evaluation time is not a future peak")
+        timerState.predictedPeakAt = nil
+        check(timerState.predictedPeakTimerInterval == nil, "missing future peak never manufactures a countdown")
+        timerState.predictedPeakAt = Date(timeIntervalSinceReferenceDate: .infinity)
+        check(timerState.predictedPeakTimerInterval == nil, "infinite prediction is rejected")
+        timerState.predictedPeakAt = Date(timeIntervalSinceReferenceDate: .nan)
+        check(timerState.predictedPeakTimerInterval == nil, "NaN prediction is rejected")
+        timerState.predictedPeakAt = now.addingTimeInterval(hour)
+        timerState.refreshedAt = Date(timeIntervalSinceReferenceDate: -.infinity)
+        check(timerState.predictedPeakTimerInterval == nil, "nonfinite evaluation time is rejected")
+        check(oldState.predictedPeakTimerInterval == nil, "legacy content with no peak remains countdown-free")
+        check(DoseActivityController.state(from: noHistory, now: now).predictedPeakTimerInterval == nil,
+              "empty dose history cannot invent an upcoming peak")
+        check(futureState.predictedPeakAt == state.predictedPeakAt,
+              "unrecorded future dose does not alter countdown prediction")
+        var falling = SharedSnapshot(status: DoseStatus.compute(doses: [Dose(at: now.addingTimeInterval(-24 * hour), mg: 50)], now: now), targetAt: nil)
+        falling.recentDoses = [DoseTick(at: now.addingTimeInterval(-24 * hour), mg: 50, food: .empty)]
+        check(DoseActivityController.state(from: falling, now: now).predictedPeakTimerInterval == nil,
+              "declining residual alone is not labelled as a future peak")
+        let newDose = Dose(at: now, mg: 50)
+        let updatedDoses = doses + [newDose]
+        var updatedSnapshot = snapshot
+        updatedSnapshot.recentDoses = updatedDoses.map { DoseTick(at: $0.at, mg: $0.mg, food: $0.food) }
+        let updatedState = DoseActivityController.state(from: updatedSnapshot, now: now)
+        check(updatedState.predictedPeakAt == DoseEngine.nextLocalPlasmaPeak(doses: updatedDoses, now: now, curve: snapshot.plasmaCurve),
+              "recording a new dose recomputes the total multi-dose curve peak")
+        check(updatedState.predictedPeakAt != state.predictedPeakAt && updatedState.predictedPeakTimerInterval != nil,
+              "new dose replaces the old countdown deadline")
         var peakDue = state
         peakDue.predictedPeakAt = now.addingTimeInterval(15)
         check(DoseActivityController.nextStale(for: peakDue, now: now) == peakDue.predictedPeakAt,

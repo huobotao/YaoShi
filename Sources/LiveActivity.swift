@@ -38,6 +38,18 @@ struct DoseAttributes: ActivityAttributes {
         var predictedPeakAt: Date? = nil
         var refreshedAt: Date
 
+        /// An immutable prediction interval for the system-rendered countdown.
+        /// It intentionally does not consult the wall clock or ActivityKit's stale flag:
+        /// a concentration snapshot can expire while its known deadline still counts down.
+        /// Native Text(timerInterval:countsDown:) clamps to zero at the upper bound.
+        var predictedPeakTimerInterval: ClosedRange<Date>? {
+            guard refreshedAt.timeIntervalSinceReferenceDate.isFinite,
+                  let peak = predictedPeakAt,
+                  peak.timeIntervalSinceReferenceDate.isFinite,
+                  peak > refreshedAt else { return nil }
+            return refreshedAt...peak
+        }
+
         var phase: DosePhase { DosePhase(rawValue: phaseRaw) ?? .none }
 
         /// 按需记录，没有逾期服药状态；保留接口兼容旧活动。
