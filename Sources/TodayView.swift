@@ -173,10 +173,9 @@ struct TodayView: View {
                                   annotations: store.effects.filter { !$0.note.isEmpty },
                                   lifeEvents: store.lifeEvents,
                                   episode: episode,
+                                  showDecayMilestones: true,
                                   onExpand: { showCurveAnalysis = true },
                                   onEditNote: { editingNote = $0 })
-                        DecayMilestoneView(doses: store.doses, now: ctx.date,
-                                           curve: store.settings.plasmaCurve)
                         Text("仅按已记录剂量和通用参数计算，不能据此判断是否适合再次服药。")
                             .font(.system(size: 11)).foregroundStyle(YS.dim)
 

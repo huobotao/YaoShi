@@ -156,6 +156,7 @@ struct DoseCurve: View {
     var lifeEvents: [LifeEvent] = []
     var expanded: Bool = false
     var episode: DoseEpisode? = nil
+    var showDecayMilestones = false
     var onExpand: (() -> Void)? = nil
     var onEditNote: ((EffectLog) -> Void)? = nil
     var selectedTime: Date? = nil
@@ -292,6 +293,9 @@ struct DoseCurve: View {
                 axisLabel(range.lowerBound.addingTimeInterval(range.upperBound.timeIntervalSince(range.lowerBound) / 2), alignment: .center)
                 Spacer(minLength: 0)
                 axisLabel(range.upperBound, alignment: .trailing)
+            }
+            if showDecayMilestones {
+                DecayMilestoneView(doses: model.historyDoses, now: model.now, curve: model.curve)
             }
             doseTimeline
             HStack(spacing: 4) {
