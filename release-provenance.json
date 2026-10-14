@@ -1,0 +1,9 @@
+{
+  "variant": "2.10.11-R5",
+  "baseCommit": "ab70d64deed086079412bac1736e9632933710b2",
+  "bundleIdentifier": "com.richardhuo.yaoshi.archive.v21011r5",
+  "displayName": "药时15分·R5",
+  "purpose": "Independent restoration of original manual 15-minute experiment; experiment code unchanged",
+  "targetDevice": "iPhone 17 Pro only",
+  "dataPolicy": "Isolated keychain namespaces and URL schemes; local backup copy only; no original-app writes"
+}

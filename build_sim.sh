@@ -34,8 +34,8 @@ extract_app_intents "$EXT" YaoShiWidget "$SDK" "${ARCH}-apple-ios17.0-simulator"
 python3 - "$APP/Info.plist" <<'PY'
 import plistlib,sys
 plistlib.dump({
- "CFBundleDevelopmentRegion":"zh_CN","CFBundleDisplayName":"药时","CFBundleName":"药时",
- "CFBundleExecutable":"药时","CFBundleIdentifier":"com.richardhuo.yaoshi",
+ "CFBundleDevelopmentRegion":"zh_CN","CFBundleDisplayName":"药时15分·R5","CFBundleName":"药时",
+ "CFBundleExecutable":"药时","CFBundleIdentifier":"com.richardhuo.yaoshi.archive.v21011r5",
  "CFBundleInfoDictionaryVersion":"6.0","CFBundlePackageType":"APPL",
  "MinimumOSVersion":"17.0",
  "UILaunchScreen":{},"UIUserInterfaceStyle":"Dark",
@@ -44,15 +44,15 @@ plistlib.dump({
  "NSLocalNetworkUsageDescription":"经你确认后，与 Apple TV 配对并发送曲线数据。",
  "NSBonjourServices":["_yaoshi-tv-v1._tcp"],
  "NSSupportsLiveActivities":True,"NSSupportsLiveActivitiesFrequentUpdates":True,
- "CFBundleURLTypes":[{"CFBundleURLName":"com.richardhuo.yaoshi","CFBundleURLSchemes":["yaoshi"]}],"CFBundleSupportedPlatforms":["iPhoneSimulator"],
+ "CFBundleURLTypes":[{"CFBundleURLName":"com.richardhuo.yaoshi.archive.v21011r5","CFBundleURLSchemes":["yaoshi-21011r5","yaoshi-21011r5-partner"]}],"CFBundleSupportedPlatforms":["iPhoneSimulator"],
  "UIDeviceFamily":[1,2],
 }, open(sys.argv[1],'wb'))
 PY
 python3 - "$EXT/Info.plist" <<'PY'
 import plistlib,sys
 plistlib.dump({
- "CFBundleDevelopmentRegion":"zh_CN","CFBundleDisplayName":"药时","CFBundleName":"YaoShiWidget",
- "CFBundleExecutable":"YaoShiWidget","CFBundleIdentifier":"com.richardhuo.yaoshi.widget",
+ "CFBundleDevelopmentRegion":"zh_CN","CFBundleDisplayName":"药时15分·R5","CFBundleName":"YaoShiWidget",
+ "CFBundleExecutable":"YaoShiWidget","CFBundleIdentifier":"com.richardhuo.yaoshi.archive.v21011r5.widget",
  "CFBundleInfoDictionaryVersion":"6.0","CFBundlePackageType":"XPC!",
  "MinimumOSVersion":"17.0",
  "CFBundleSupportedPlatforms":["iPhoneSimulator"],"UIDeviceFamily":[1,2],

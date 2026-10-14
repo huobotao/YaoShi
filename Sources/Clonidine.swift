@@ -65,8 +65,8 @@ struct ClonidineSnapshot: Codable, Hashable {
 }
 
 enum ClonidineSyncStore {
-    private static let service = "com.richardhuio.yaoshi.clonidine.sync"
-    private static let group = "P272ZF8FA9.com.richardhuo.yaoshi.shared"
+    private static let service = "com.richardhuo.yaoshi.archive.v21011r5.clonidine.sync"
+    private static let group = "P272ZF8FA9.com.richardhuo.yaoshi.archive.v21011r5.shared"
     private static let accountPrefix = "clonidine-v1-"
 
     static var account: String {
