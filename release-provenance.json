@@ -1,9 +1,9 @@
 {
-  "variant": "2.10.12-R1",
+  "variant": "2.10.12-R2",
   "baseCommit": "423dc26765d67b513221c3f5feccbf7939c00d8c",
   "baseTag": "v2.10.12-build41",
-  "bundleIdentifier": "com.richardhuo.yaoshi.archive.v21012r1",
-  "displayName": "药时12·R1",
+  "bundleIdentifier": "com.richardhuo.yaoshi.archive.v21012r2",
+  "displayName": "药时12·R2",
   "purpose": "Side-by-side restoration of the continuous background refresh version",
   "dataPolicy": "Isolated keychain namespaces; local backup copy only; no original-app writes"
 }

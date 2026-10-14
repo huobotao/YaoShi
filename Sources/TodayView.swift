@@ -24,7 +24,7 @@ struct TodayView: View {
                 }
             }
             .background(YS.bg.ignoresSafeArea())
-            .navigationTitle("药时 2.10.12 · R1")
+            .navigationTitle("药时 2.10.12 · R2")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
