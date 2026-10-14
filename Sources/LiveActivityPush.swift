@@ -140,13 +140,21 @@ enum LiveActivityPush {
     nonisolated static func buildSchedule(snapshot: SharedSnapshot, started: Date) -> [Entry] {
                 var result: [Entry] = []
                 var nextPeak: Date?
+                let doses = snapshot.recentDoses?.map(\.asDose) ?? snapshot.status.lastDoseAt.map { [Dose(at: $0, mg: snapshot.status.lastMg)] } ?? []
+                var frozen = snapshot
+                frozen.recentDoses = doses.filter { $0.at <= started && $0.at.timeIntervalSinceReferenceDate.isFinite && $0.mg > 0 }
+                    .map { DoseTick(at: $0.at, mg: $0.mg, food: $0.food) }
+                let declines = DoseEngine.decayMilestones(doses, from: started, curve: snapshot.plasmaCurve)
                 for index in 0..<960 {
                     let at = Date(timeIntervalSince1970: floor(started.timeIntervalSince1970) + Double(index * 30))
-                    var state = DoseActivityController.state(from: snapshot, now: at, calculatePeak: false)
+                    var state = DoseActivityController.state(from: frozen, now: at, calculatePeak: false)
                     if index == 0 || (nextPeak != nil && nextPeak! <= at) {
-                        nextPeak = DoseActivityController.state(from: snapshot, now: at).predictedPeakAt
+                        nextPeak = DoseActivityController.state(from: frozen, now: at).predictedPeakAt
                     }
                     state.predictedPeakAt = nextPeak
+                    let decline = declines.first { !$0.alreadyBelow && ($0.at ?? .distantPast) > at }
+                    state.declineTarget = decline?.target
+                    state.declineAt = decline?.at
                     result.append(Entry(at: Int(at.timeIntervalSince1970), staleAt: Int(DoseActivityController.nextStale(for: state, now: at, maximumAge: 120).timeIntervalSince1970.rounded(.up)), contentState: state))
                 }
                 return result

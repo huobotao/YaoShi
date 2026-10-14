@@ -71,6 +71,8 @@ enum DoseActivityController {
             peakEndAt: last.map { DoseEngine.peakEndTime(of: $0) },
             effectEndAt: last.map { DoseEngine.endTime(of: $0) },
             takenToday: actual.filter { $0.dateOnly == DateOnly(now) }.count, generatedAt: now)
+        let decline = calculatePeak ? DoseEngine.decayMilestones(actual, from: now, curve: snap.plasmaCurve)
+            .first { !$0.alreadyBelow && ($0.at ?? .distantPast) > now } : nil
         return DoseAttributes.ContentState(
             lastDoseAt: status.lastDoseAt,
             lastMg: status.lastMg,
@@ -86,6 +88,8 @@ enum DoseActivityController {
             pillsLeft: snap.pillsLeft,
             concentrationRatio: actual.isEmpty ? nil : DoseEngine.totalPlasma(actual, at: now, curve: snap.plasmaCurve),
             predictedPeakAt: calculatePeak ? DoseEngine.nextLocalPlasmaPeak(doses: actual, now: now, curve: snap.plasmaCurve) : nil,
+            declineTarget: decline?.target,
+            declineAt: decline?.at,
             refreshedAt: now)
     }
 
@@ -94,7 +98,7 @@ enum DoseActivityController {
         let cal = Calendar.current
         let tomorrow = cal.startOfDay(for: cal.date(byAdding: .day, value: 1, to: now) ?? now)
         let candidates: [Date?] = [now.addingTimeInterval(maximumAge), tomorrow.addingTimeInterval(300),
-                                   st.predictedPeakAt, st.peakEndAt, st.effectEndAt, st.targetAt]
+                                   st.declineAt, st.predictedPeakAt, st.peakEndAt, st.effectEndAt, st.targetAt]
         return candidates.compactMap { $0 }.filter { $0 > now }.min() ?? tomorrow
     }
 
@@ -192,6 +196,8 @@ enum DoseActivityController {
                     item["trendAngleDegrees"] = PlasmaTrend.angleDegrees(slope: slope)
                 }
                 if let value = state.concentrationRatio { item["concentrationRatio"] = value }
+                if let target = state.declineTarget { item["declineTarget"] = target }
+                if let at = state.declineAt { item["declineAt"] = at.timeIntervalSince1970 }
                 if let peak = state.predictedPeakAt { item["predictedPeakAt"] = peak.timeIntervalSince1970 }
                 return item
             }

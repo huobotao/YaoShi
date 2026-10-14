@@ -444,42 +444,45 @@ struct DoseLiveActivity: Widget {
 
     @ViewBuilder
     private func peak(_ st: DoseAttributes.ContentState, stale: Bool) -> some View {
-        VStack(alignment: .trailing, spacing: 2) {
-            if let interval = st.predictedPeakTimerInterval {
+        VStack(alignment: .trailing, spacing: 3) {
+            if let target = st.declineTarget, let interval = st.declineTimerInterval {
+                Text((stale ? "上次预计降至 " : "预计降至 ") + String(format: "%g×", target))
+                    .font(.system(size: 11)).foregroundStyle(W.dim)
+                Text(timerInterval: interval, countsDown: true, showsHours: true)
+                    .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    .monospacedDigit().frame(width: 112, alignment: .trailing)
+                    .foregroundStyle(W.teal)
+                    .accessibilityLabel("不再服药的预计下降倒计时")
+                Text("不再服药 · 模型估算").font(.system(size: 9)).foregroundStyle(W.dim)
+            } else if let interval = st.predictedPeakTimerInterval {
                 Text(stale ? "上次预计距峰" : "预计距峰").font(.system(size: 10)).foregroundStyle(W.dim)
                 Text(timerInterval: interval, countsDown: true)
                     .font(.system(size: 19, weight: .semibold, design: .rounded))
-                    .monospacedDigit().frame(maxWidth: 96)
-                Text("约 " + Fmt2.hm(interval.upperBound)).font(.system(size: 9)).foregroundStyle(W.dim)
+                    .monospacedDigit().frame(maxWidth: 112)
             } else {
-                Text(stale ? "估算待刷新" : "暂无后续峰值")
+                Text(stale ? "估算待刷新" : "查看下降时间")
                     .font(.system(size: 11)).foregroundStyle(W.dim)
             }
         }
     }
 
     private func details(_ st: DoseAttributes.ContentState, stale: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 6) {
             if let last = st.lastDoseAt {
-                HStack(spacing: 4) {
-                    Text("上次 \(st.lastMg) mg · 已过")
-                    Text(last, style: .timer).monospacedDigit()
-                    Spacer(minLength: 0)
-                }.font(.system(size: 10)).foregroundStyle(W.dim)
+                Text("上次已过").fixedSize()
+                Text(last, style: .timer).monospacedDigit()
             }
-            HStack {
-                Text(stale ? "\(Fmt2.hm(st.refreshedAt)) 时估算 · 点右侧刷新" : "1× = 单次 50 mg 模型峰值")
-                    .font(.system(size: 9)).foregroundStyle(W.dim)
-                Spacer(minLength: 4)
-                Button(intent: RefreshDoseActivityIntent()) {
-                    Label("刷新", systemImage: "arrow.clockwise")
-                        .font(.system(size: 11, weight: .semibold))
-                }
-                .buttonStyle(.bordered)
-                .tint(W.teal)
-                .accessibilityLabel("按本机记录刷新浓度估算")
+            Spacer(minLength: 4)
+            Text((stale ? "旧估算 " : "更新 ") + Fmt2.hm(st.refreshedAt)).fixedSize()
+            Button(intent: RefreshDoseActivityIntent()) {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 32, height: 32)
             }
+            .buttonStyle(.plain).tint(W.teal)
+            .accessibilityLabel("按本机记录刷新浓度估算")
         }
+        .font(.system(size: 10)).foregroundStyle(W.dim)
     }
 
     private func summary(_ st: DoseAttributes.ContentState, stale: Bool) -> some View {

@@ -36,6 +36,8 @@ struct DoseAttributes: ActivityAttributes {
         /// Model snapshot only; stale values are explicitly labelled historical.
         var concentrationRatio: Double? = nil
         var predictedPeakAt: Date? = nil
+        var declineTarget: Double? = nil
+        var declineAt: Date? = nil
         var refreshedAt: Date
 
         /// An immutable prediction interval for the system-rendered countdown.
@@ -48,6 +50,13 @@ struct DoseAttributes: ActivityAttributes {
                   peak.timeIntervalSinceReferenceDate.isFinite,
                   peak > refreshedAt else { return nil }
             return refreshedAt...peak
+        }
+
+        var declineTimerInterval: ClosedRange<Date>? {
+            guard refreshedAt.timeIntervalSinceReferenceDate.isFinite,
+                  let end = declineAt, end.timeIntervalSinceReferenceDate.isFinite,
+                  end > refreshedAt else { return nil }
+            return refreshedAt...end
         }
 
         var phase: DosePhase { DosePhase(rawValue: phaseRaw) ?? .none }

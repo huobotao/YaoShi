@@ -175,10 +175,8 @@ struct TodayView: View {
                                   episode: episode,
                                   onExpand: { showCurveAnalysis = true },
                                   onEditNote: { editingNote = $0 })
-                        if let low = st.plasmaLowAt, low > ctx.date {
-                            Text("模型估值降到 0.2 倍，预计 \(Fmt.mdhm(low))")
-                                .font(.system(size: 12)).foregroundStyle(YS.dim)
-                        }
+                        DecayMilestoneView(doses: store.doses, now: ctx.date,
+                                           curve: store.settings.plasmaCurve)
                         Text("仅按已记录剂量和通用参数计算，不能据此判断是否适合再次服药。")
                             .font(.system(size: 11)).foregroundStyle(YS.dim)
 

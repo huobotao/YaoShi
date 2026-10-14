@@ -97,6 +97,40 @@ import Foundation
         let futureState = DoseActivityController.state(from: futureSnapshot, now: now)
         check(close(futureState.concentrationRatio, chart.currentLevel), "future records do not change current plasma")
 
+        check(futureState.declineTarget == state.declineTarget && futureState.declineAt == state.declineAt,
+              "future-dated record cannot alter no-further-dose prediction")
+        let futureSchedule = LiveActivityPush.buildSchedule(snapshot: futureSnapshot, started: now)
+        check(close(futureSchedule[240].contentState.concentrationRatio, schedule[240].contentState.concentrationRatio!),
+              "no-further-dose schedule does not introduce a future-dated record as time advances")
+
+        let milestones = DoseEngine.decayMilestones(doses, from: now, curve: snapshot.plasmaCurve)
+        let firstDecline = milestones.first { !$0.alreadyBelow && ($0.at ?? .distantPast) > now }
+        check(state.declineTarget == firstDecline?.target && state.declineAt == firstDecline?.at,
+              "activity decline target agrees with full-history custom-curve prediction")
+        var observedTargets = Set<Double>()
+        for entry in schedule {
+            let slot = Date(timeIntervalSince1970: Double(entry.at))
+            let expected = milestones.first { !$0.alreadyBelow && ($0.at ?? .distantPast) > slot }
+            check(entry.contentState.declineTarget == expected?.target && entry.contentState.declineAt == expected?.at,
+                  "scheduled decline moves to next pending threshold after each crossing")
+            if let target = entry.contentState.declineTarget { observedTargets.insert(target) }
+        }
+        check(observedTargets.count > 1, "schedule fixture crosses at least one decline threshold")
+        var declineTimer = state
+        declineTimer.declineTarget = 1
+        declineTimer.declineAt = now.addingTimeInterval(15)
+        check(declineTimer.declineTimerInterval == now...now.addingTimeInterval(15),
+              "decline native countdown uses a fixed prediction interval")
+        check(DoseActivityController.nextStale(for: declineTimer, now: now) == declineTimer.declineAt,
+              "decline boundary invalidates displayed target at the crossing")
+        declineTimer.declineAt = now
+        check(declineTimer.declineTimerInterval == nil, "zero-duration decline deadline is rejected")
+        declineTimer.declineAt = Date(timeIntervalSinceReferenceDate: .infinity)
+        check(declineTimer.declineTimerInterval == nil, "nonfinite decline deadline is rejected")
+        declineTimer.declineAt = now.addingTimeInterval(hour)
+        declineTimer.refreshedAt = Date(timeIntervalSinceReferenceDate: -.infinity)
+        check(declineTimer.declineTimerInterval == nil, "nonfinite decline evaluation time is rejected")
+
         let last = Dose(at: now.addingTimeInterval(-4 * hour), mg: 80)
         var legacy = SharedSnapshot(status: DoseStatus.compute(doses: [last], now: now), targetAt: nil)
         legacy.plasmaPeakTenthHoursOverride = 52
@@ -126,11 +160,15 @@ import Foundation
         oldObject.removeValue(forKey: "plasmaSlopePerHour")
         oldObject.removeValue(forKey: "concentrationRatio")
         oldObject.removeValue(forKey: "predictedPeakAt")
+        oldObject.removeValue(forKey: "declineTarget")
+        oldObject.removeValue(forKey: "declineAt")
         let oldData = try JSONSerialization.data(withJSONObject: oldObject)
         let oldState = try JSONDecoder().decode(DoseAttributes.ContentState.self, from: oldData)
         check(oldState.plasmaSlopePerHour == nil, "old activity slope remains unknown")
         check(oldState.concentrationRatio == nil, "old JSON without plasma decodes compatibly")
         check(oldState.predictedPeakAt == nil, "old JSON without peak decodes compatibly")
+        check(oldState.declineTarget == nil && oldState.declineAt == nil && oldState.declineTimerInterval == nil,
+              "old JSON without decline prediction remains compatible and countdown-free")
         check(oldState.lastDoseAt == state.lastDoseAt && oldState.level == state.level,
               "old activity retains its existing fields")
 

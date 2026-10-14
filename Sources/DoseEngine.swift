@@ -109,6 +109,14 @@ struct PlasmaCurveConfiguration: Hashable {
     }
 }
 
+/// 在不再新增服药的前提下，模型最后一次下降到指定水平的时刻。
+struct PlasmaDecayMilestone {
+    let target: Double
+    let at: Date?
+    /// 当前已低于目标，并且已记录剂量的后续吸收也不会再达到目标。
+    let alreadyBelow: Bool
+}
+
 // MARK: - 药效引擎
 //
 // 模型：口服单室一阶吸收-一阶消除。
@@ -265,6 +273,87 @@ enum DoseEngine {
             sum += plasmaLevel(hoursSinceDose: t, food: d.food, curve: curve) * doseWeight(d.mg)
         }
         return sum
+    }
+
+    /// 仅使用已经发生的服药记录；求最后一次下降穿越，避免尚未吸收时误报已经回落。
+    /// 同一吸收区间内是两个指数项的和，至多有一个极大值；在时滞边界分段寻找极大值，
+    /// 因此不会漏掉短于采样步长的回升。最后一笔单剂达峰之后，总和保证单调下降。
+    static func decayMilestones(_ doses: [Dose], from now: Date,
+                                curve: PlasmaCurveConfiguration = .standard) -> [PlasmaDecayMilestone] {
+        let history = doses.filter { $0.at <= now && $0.mg > 0 }
+        guard !history.isEmpty else { return [] }
+        let targets: [Double] = [3, 2.5, 2, 1, 0.5, 0.1]
+        let ka = curve.absorptionRate, ke = curve.eliminationRate
+        guard ka.isFinite, ke.isFinite, ka > 0, ke > 0,
+              curve.peakLevel.isFinite, curve.peakLevel > 0 else {
+            return targets.map { PlasmaDecayMilestone(target: $0, at: nil, alreadyBelow: false) }
+        }
+        func value(_ seconds: Double) -> Double {
+            totalPlasma(history, at: now.addingTimeInterval(seconds), curve: curve)
+        }
+        func slope(_ seconds: Double) -> Double {
+            let at = now.addingTimeInterval(seconds)
+            return history.reduce(0) { sum, dose in
+                let x = at.timeIntervalSince(dose.at) / 3600 - curve.lag(for: dose.food)
+                guard x >= 0 else { return sum }
+                let derivative: Double
+                if abs(ka - ke) < max(ka, ke) * 1e-8 {
+                    derivative = exp(-ke * x) * (1 - ke * x)
+                } else {
+                    derivative = (ka > ke ? 1.0 : -1.0)
+                        * (ka * exp(-ka * x) - ke * exp(-ke * x))
+                }
+                return sum + derivative / curve.peakLevel * doseWeight(dose.mg)
+            }
+        }
+        let lastPeak = max(0, history.map { dose in
+            dose.at.timeIntervalSince(now)
+                + (max(0.05, curve.peakTimeHours - PlasmaCurveConfiguration.lagHours)
+                   + curve.lag(for: dose.food)) * 3600
+        }.max() ?? 0)
+        var boundaries = [0.0, lastPeak]
+        boundaries += history.map { $0.at.timeIntervalSince(now) + curve.lag(for: $0.food) * 3600 }
+            .filter { $0 > 0 && $0 < lastPeak }
+        boundaries = Array(Set(boundaries)).sorted()
+        var points = boundaries
+        for (left, right) in zip(boundaries, boundaries.dropFirst()) where right - left > 0.001 {
+            // Evaluate just inside each interval to exclude derivative jumps at absorption starts.
+            var lo = left + min(0.0001, (right - left) / 4)
+            var hi = right - min(0.0001, (right - left) / 4)
+            if slope(lo) > 0 && slope(hi) < 0 {
+                while hi - lo > 0.001 {
+                    let mid = (lo + hi) / 2
+                    if slope(mid) > 0 { lo = mid } else { hi = mid }
+                }
+                points.append((lo + hi) / 2)
+            }
+        }
+        // Expand the monotonic tail adaptively. The bound permits at least 30 days and
+        // extends further for custom slow absorption / elimination models.
+        let maxSpan = max(30 * 24 * 3600.0, 64 * 3600 / min(ka, ke))
+        var span = 3600.0
+        while value(lastPeak + span) >= targets.last! && span < maxSpan {
+            span = min(span * 2, maxSpan)
+        }
+        points.append(lastPeak + span)
+        points.sort()
+        let samples = points.map { (time: $0, level: value($0)) }
+        return targets.map { target in
+            guard let lastAbove = samples.lastIndex(where: { $0.level >= target }) else {
+                return PlasmaDecayMilestone(target: target, at: now, alreadyBelow: true)
+            }
+            guard lastAbove + 1 < samples.count else {
+                return PlasmaDecayMilestone(target: target, at: nil, alreadyBelow: false)
+            }
+            var lo = samples[lastAbove].time
+            var hi = samples[lastAbove + 1].time
+            // Return the below-target side of a subsecond bracket (display precision is minutes).
+            while hi - lo > 0.25 {
+                let mid = (lo + hi) / 2
+                if value(mid) >= target { lo = mid } else { hi = mid }
+            }
+            return PlasmaDecayMilestone(target: target, at: now.addingTimeInterval(hi), alreadyBelow: false)
+        }
     }
 
     /// 未来峰值后首次降到目标水平的时刻，5 分钟一步，最多从现在往后找 48 小时。
