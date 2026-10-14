@@ -118,7 +118,7 @@ struct YaoShiWidgetView: View {
             default:                    small
             }
         }
-        .widgetURL(URL(string: "yaoshi-21012r2://take"))
+        .widgetURL(URL(string: "yaoshi-21012r4://take"))
     }
 
     // 主屏小号
@@ -356,29 +356,20 @@ struct DoseLiveActivity: Widget {
         ActivityConfiguration(for: DoseAttributes.self) { context in
             summary(context.state, stale: context.isStale)
                 .padding(14)
-                .activityBackgroundTint(Color.black.opacity(0.55))
+                .activityBackgroundTint(Color.black)
                 .activitySystemActionForegroundColor(W.teal)
         } dynamicIsland: { context in
             let st = context.state
             let stale = context.isStale
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 3) {
-                            trendArrow(st, isStale: stale, compact: true)
-                            Text("相对浓度 · 估算").font(.system(size: 10)).foregroundStyle(W.dim)
-                        }
-                        Text(ratio(st, stale: stale))
-                            .font(.system(size: 24, weight: .bold, design: .rounded))
-                            .monospacedDigit().foregroundStyle(W.teal)
-                            .lineLimit(1).minimumScaleFactor(0.6)
-                    }
+                    concentration(st, stale: stale, size: 27)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    peak(st, stale: stale)
+                    episodeTimer(st)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    details(st, stale: stale)
+                    curve(st, stale: stale)
                 }
             } compactLeading: {
                 if st.predictedPeakTimerInterval != nil {
@@ -410,7 +401,7 @@ struct DoseLiveActivity: Widget {
                     .font(.system(size: 10, weight: .semibold)).monospacedDigit()
                     .lineLimit(1).minimumScaleFactor(0.5).foregroundStyle(W.teal)
             }
-            .widgetURL(URL(string: "yaoshi-21012r2://dashboard"))
+            .widgetURL(URL(string: "yaoshi-21012r4://dashboard"))
             .keylineTint(W.teal)
         }
     }
@@ -442,64 +433,124 @@ struct DoseLiveActivity: Widget {
         }
     }
 
+    private func concentration(_ st: DoseAttributes.ContentState, stale: Bool, size: CGFloat) -> some View {
+        HStack(spacing: 5) {
+            trendArrow(st, isStale: stale, compact: true)
+            Text(ratio(st, stale: stale))
+                .font(.system(size: size, weight: .bold, design: .rounded))
+                .monospacedDigit().foregroundStyle(stale ? W.dim : W.teal)
+                .lineLimit(1).minimumScaleFactor(0.6)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(stale ? "上次模型估算 " + ratio(st, stale: true) : "模型估算 " + ratio(st, stale: false))
+    }
+
     @ViewBuilder
-    private func peak(_ st: DoseAttributes.ContentState, stale: Bool) -> some View {
-        VStack(alignment: .trailing, spacing: 2) {
-            if let interval = st.predictedPeakTimerInterval {
-                Text(stale ? "上次预计距峰" : "预计距峰").font(.system(size: 10)).foregroundStyle(W.dim)
-                Text(timerInterval: interval, countsDown: true)
-                    .font(.system(size: 19, weight: .semibold, design: .rounded))
-                    .monospacedDigit().frame(maxWidth: 96)
-                Text("约 " + Fmt2.hm(interval.upperBound)).font(.system(size: 9)).foregroundStyle(W.dim)
-            } else {
-                Text(stale ? "估算待刷新" : "暂无后续峰值")
-                    .font(.system(size: 11)).foregroundStyle(W.dim)
+    private func episodeTimer(_ st: DoseAttributes.ContentState) -> some View {
+        if let start = st.episodeStartedAt, start.timeIntervalSinceReferenceDate.isFinite, start <= st.refreshedAt {
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("本轮已过").font(.system(size: 10)).foregroundStyle(W.dim)
+                Text(start, style: .timer)
+                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .monospacedDigit().lineLimit(1).minimumScaleFactor(0.6)
+                    .multilineTextAlignment(.trailing)
+                    .foregroundStyle(.white)
+                    .accessibilityLabel("距本轮第一次服药")
             }
+            .frame(width: 118, alignment: .trailing)
         }
     }
 
-    private func details(_ st: DoseAttributes.ContentState, stale: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if let last = st.lastDoseAt {
-                HStack(spacing: 4) {
-                    Text("上次 \(st.lastMg) mg · 已过")
-                    Text(last, style: .timer).monospacedDigit()
-                    Spacer(minLength: 0)
-                }.font(.system(size: 10)).foregroundStyle(W.dim)
-            }
+    @ViewBuilder
+    private func curve(_ st: DoseAttributes.ContentState, stale: Bool) -> some View {
+        if let data = st.curve, data.isValid(at: st.refreshedAt) {
+            DoseIslandCurve(data: data, refreshedAt: st.refreshedAt, stale: stale)
+        } else {
             HStack {
-                Text(stale ? "\(Fmt2.hm(st.refreshedAt)) 时估算 · 点右侧刷新" : "1× = 单次 50 mg 模型峰值")
-                    .font(.system(size: 9)).foregroundStyle(W.dim)
-                Spacer(minLength: 4)
-                Button(intent: RefreshDoseActivityIntent()) {
-                    Label("刷新", systemImage: "arrow.clockwise")
-                        .font(.system(size: 11, weight: .semibold))
-                }
-                .buttonStyle(.bordered)
-                .tint(W.teal)
-                .accessibilityLabel("按本机记录刷新浓度估算")
+                Text("模型曲线待更新")
+                Spacer()
+                if stale { Text("旧 · " + Fmt2.mdhm(st.refreshedAt)) }
+            }
+            .font(.system(size: 9)).foregroundStyle(W.dim)
+        }
+    }
+
+    func summary(_ st: DoseAttributes.ContentState, stale: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center) {
+                concentration(st, stale: stale, size: 30)
+                Spacer(minLength: 8)
+                episodeTimer(st)
+            }
+            curve(st, stale: stale)
+        }
+    }
+}
+
+/// Payload samples represent a model, with the update instant fixed at sample 64.
+/// Never move that marker using wall-clock time: an old snapshot must look old.
+@available(iOS 16.2, *)
+private struct DoseIslandCurve: View {
+    let data: DoseActivityCurve
+    let refreshedAt: Date
+    let stale: Bool
+
+    private var tint: Color { stale ? W.dim : W.teal }
+    private func point(_ index: Int, size: CGSize) -> CGPoint {
+        let x = data.fraction(at: data.time(at: index, refreshedAt: refreshedAt))
+        return CGPoint(x: 3 + x * max(0, size.width - 6),
+                       y: 3 + (1 - Double(data.samples[index]) / 10000) * max(0, size.height - 6))
+    }
+
+    private func line(_ indices: ClosedRange<Int>, size: CGSize) -> Path {
+        Path { path in
+            for index in indices {
+                let p = point(index, size: size)
+                if index == indices.lowerBound { path.move(to: p) }
+                else { path.addLine(to: p) }
             }
         }
     }
 
-    private func summary(_ st: DoseAttributes.ContentState, stale: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 5) {
-                        trendArrow(st, isStale: stale)
-                        Text("药时 · 相对浓度估算").font(.system(size: 11)).foregroundStyle(W.dim)
-                    }
-                    Text(ratio(st, stale: stale))
-                        .font(.system(size: 32, weight: .bold, design: .rounded))
-                        .monospacedDigit().foregroundStyle(W.teal)
-                }
-                Spacer()
-                peak(st, stale: stale)
+    var body: some View {
+        VStack(spacing: 3) {
+            HStack(spacing: 4) {
+                Text("模型")
+                Spacer(minLength: 4)
+                Text((stale ? "旧 · " : "更新于 ") + Fmt2.mdhm(refreshedAt))
             }
-            details(st, stale: stale)
+            .font(.system(size: 9)).foregroundStyle(W.dim)
+            Canvas { context, size in
+                let current = point(64, size: size)
+                let baseline = Path { p in
+                    p.move(to: CGPoint(x: 3, y: size.height - 3))
+                    p.addLine(to: CGPoint(x: size.width - 3, y: size.height - 3))
+                }
+                context.stroke(baseline, with: .color(W.dim.opacity(0.25)), lineWidth: 0.5)
+                let marker = Path { p in
+                    p.move(to: CGPoint(x: current.x, y: 1))
+                    p.addLine(to: CGPoint(x: current.x, y: size.height - 3))
+                }
+                context.stroke(marker, with: .color(tint.opacity(0.4)),
+                               style: StrokeStyle(lineWidth: 1, dash: [2, 3]))
+                context.stroke(line(0...64, size: size), with: .color(tint),
+                               style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                context.stroke(line(64...96, size: size), with: .color(tint.opacity(0.65)),
+                               style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round, dash: [4, 3]))
+                let dot = Path(ellipseIn: CGRect(x: current.x - 3, y: current.y - 3, width: 6, height: 6))
+                context.fill(dot, with: .color(stale ? W.dim : .white))
+            }
+            .frame(height: 65)
+            .accessibilityLabel("相对浓度模型曲线，实线为历史估算，虚线为不再服药时的预测，圆点为 " + Fmt2.mdhm(refreshedAt) + " 时的估算")
+            HStack {
+                Text(Fmt2.mdhm(data.startAt))
+                Spacer()
+                Text(Fmt2.mdhm(data.endAt))
+            }
+            .font(.system(size: 9)).monospacedDigit().foregroundStyle(W.dim)
         }
     }
+
 }
 
 // MARK: - 入口

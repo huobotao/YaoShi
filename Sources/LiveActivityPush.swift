@@ -87,6 +87,7 @@ enum LiveActivityPush {
         let target: Date?
         let skipped: Bool
         let pills: Int
+        let episodeStartedAt: Date?
     }
     private static var observers: [String: Task<Void, Never>] = [:]
     private static var latestSnapshot: SharedSnapshot?
@@ -120,13 +121,14 @@ enum LiveActivityPush {
         else { report("waitingForActivityPushToken") }
     }
 
-    private static func fingerprint(_ snap: SharedSnapshot) -> Data {
+    static func fingerprint(_ snap: SharedSnapshot) -> Data {
         let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
         return (try? encoder.encode(Fingerprint(doses: snap.recentDoses,
             legacyLast: snap.recentDoses == nil ? snap.status.lastDoseAt : nil,
             legacyMg: snap.recentDoses == nil ? snap.status.lastMg : nil,
             peak: snap.plasmaPeakTenthHoursOverride, halfLife: snap.plasmaHalfLifeTenthHoursOverride,
-            target: snap.targetAt, skipped: snap.skippedToday, pills: snap.pillsLeft))) ?? Data()
+            target: snap.targetAt, skipped: snap.skippedToday, pills: snap.pillsLeft,
+            episodeStartedAt: snap.episodeStartedAt))) ?? Data()
     }
 
     private static func nextGeneration() -> Int64 {

@@ -31,6 +31,7 @@ import Foundation
         snapshot.plasmaPeakTenthHoursOverride = 52
         snapshot.plasmaHalfLifeTenthHoursOverride = 145
         snapshot.updatedAt = now
+        snapshot.episodeStartedAt = doses[1].at
 
         var gate = LiveActivityRegistrationGate()
         let sig = Data([1]), token = Data([2])
@@ -78,6 +79,33 @@ import Foundation
         let roundTrip = try JSONDecoder().decode(LiveActivityPush.Entry.self, from: encodedEntry)
         check(roundTrip.contentState == schedule[0].contentState, "relay JSON preserves ActivityKit Codable dates and values")
         let state = DoseActivityController.state(from: snapshot, now: now)
+        check(state.episodeStartedAt == doses[1].at, "resolved episode is forwarded without inferring from dose ticks")
+        var changedEpisode = snapshot
+        changedEpisode.episodeStartedAt = nil
+        check(LiveActivityPush.fingerprint(snapshot) != LiveActivityPush.fingerprint(changedEpisode),
+              "clearing the episode invalidates the push schedule fingerprint")
+        check(DoseActivityController.state(from: changedEpisode, now: now).episodeStartedAt == nil,
+              "explicitly cleared or missing episode never falls back to earliest dose")
+        changedEpisode.episodeStartedAt = now.addingTimeInterval(hour)
+        check(DoseActivityController.state(from: changedEpisode, now: now).episodeStartedAt == nil,
+              "future episode start cannot display negative elapsed time")
+        let modelCurve = state.curve!
+        check(modelCurve.isValid(at: now) && modelCurve.samples.count == 97, "curve has a bounded valid payload")
+        check(modelCurve.time(at: 64, refreshedAt: now) == now, "current point is sampled at the exact evaluation time")
+        check(abs(Double(modelCurve.samples[64]) / 10_000 * modelCurve.upperLevel - state.concentrationRatio!) <= modelCurve.upperLevel / 20_000 + 1e-12,
+              "quantized current curve point agrees with the displayed concentration")
+        for index in [0, 31, 64, 81, 96] {
+            let expected = DoseEngine.totalPlasma(doses, at: modelCurve.time(at: index, refreshedAt: now), curve: snapshot.plasmaCurve)
+            let sampled = Double(modelCurve.samples[index]) / 10_000 * modelCurve.upperLevel
+            check(abs(sampled - expected) <= modelCurve.upperLevel / 20_000 + 1e-12,
+                  "bounded curve uses all history and custom parameters at sample \(index)")
+        }
+        var malformedCurve = modelCurve
+        malformedCurve.samples.append(0)
+        check(!malformedCurve.isValid(at: now), "oversized decoded curve is not rendered")
+        malformedCurve = modelCurve
+        malformedCurve.samples[0] = -1
+        check(!malformedCurve.isValid(at: now), "out of range decoded curve is not rendered")
         let chart = DoseCurveModel(doses: doses, now: now, curve: snapshot.plasmaCurve)
         check((state.concentrationRatio ?? 0) > 1, "stacked plasma is not clamped to one")
         check(close(state.concentrationRatio, chart.currentLevel), "all records and custom curve agree with main chart")
@@ -96,6 +124,7 @@ import Foundation
         futureSnapshot.recentDoses?.append(DoseTick(at: now.addingTimeInterval(hour), mg: 400, food: .empty))
         let futureState = DoseActivityController.state(from: futureSnapshot, now: now)
         check(close(futureState.concentrationRatio, chart.currentLevel), "future records do not change current plasma")
+        check(futureState.curve == state.curve, "future records never invent a planned dose in the curve")
 
         let last = Dose(at: now.addingTimeInterval(-4 * hour), mg: 80)
         var legacy = SharedSnapshot(status: DoseStatus.compute(doses: [last], now: now), targetAt: nil)
@@ -113,6 +142,7 @@ import Foundation
         noHistory.status.generatedAt = now
         check(DoseActivityController.state(from: noHistory, now: now).concentrationRatio == nil,
               "missing last dose and records leaves plasma unavailable")
+        check(DoseActivityController.state(from: noHistory, now: now).curve == nil, "empty history has no invented curve")
         legacy.recentDoses = nil
         legacy.status.lastDoseAt = now.addingTimeInterval(hour)
         check(DoseActivityController.state(from: legacy, now: now).concentrationRatio == nil,
@@ -120,17 +150,37 @@ import Foundation
 
         let encoded = try JSONEncoder().encode(state)
         check(encoded.count < 4096, "typical activity state stays below four kilobytes")
+        let stateObject = try JSONSerialization.jsonObject(with: encoded)
+        let envelope: [String: Any] = ["aps": ["timestamp": Int(now.timeIntervalSince1970), "event": "update",
+            "content-state": stateObject, "stale-date": Int(now.timeIntervalSince1970 + 60)]]
+        let encodedEnvelope = try JSONSerialization.data(withJSONObject: envelope)
+        check(encodedEnvelope.count < 4096,
+              "bounded curve fits the complete four kilobyte APNs envelope")
         let decoded = try JSONDecoder().decode(DoseAttributes.ContentState.self, from: encoded)
         check(decoded == state, "new activity state round trips without losing plasma")
         var oldObject = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
         oldObject.removeValue(forKey: "plasmaSlopePerHour")
         oldObject.removeValue(forKey: "concentrationRatio")
         oldObject.removeValue(forKey: "predictedPeakAt")
+        oldObject.removeValue(forKey: "episodeStartedAt")
+        oldObject.removeValue(forKey: "curve")
         let oldData = try JSONSerialization.data(withJSONObject: oldObject)
         let oldState = try JSONDecoder().decode(DoseAttributes.ContentState.self, from: oldData)
         check(oldState.plasmaSlopePerHour == nil, "old activity slope remains unknown")
         check(oldState.concentrationRatio == nil, "old JSON without plasma decodes compatibly")
         check(oldState.predictedPeakAt == nil, "old JSON without peak decodes compatibly")
+        check(oldState.curve == nil && oldState.episodeStartedAt == nil, "old activities omit curve and episode without decode failure")
+        var legacySnapshotObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(snapshot)) as! [String: Any]
+        legacySnapshotObject.removeValue(forKey: "episodeStartedAt")
+        let legacySnapshot = try JSONDecoder().decode(SharedSnapshot.self, from: JSONSerialization.data(withJSONObject: legacySnapshotObject))
+        check(legacySnapshot.episodeStartedAt == nil, "legacy snapshot does not invent a round start")
+        let longHistory = (0..<800).map { Dose(at: now.addingTimeInterval(-Double($0) * hour), mg: 500) }
+        var largeSnapshot = snapshot
+        largeSnapshot.recentDoses = longHistory.map { DoseTick(at: $0.at, mg: $0.mg, food: $0.food) }
+        let largeState = DoseActivityController.state(from: largeSnapshot, now: now, calculatePeak: false)
+        check(largeState.curve?.samples.count == 97, "large history never expands the fixed curve sample count")
+        let encodedLargeState = try JSONEncoder().encode(largeState)
+        check(encodedLargeState.count + 256 < 4096, "large values and history retain room for APNs and attributes")
         check(oldState.lastDoseAt == state.lastDoseAt && oldState.level == state.level,
               "old activity retains its existing fields")
 

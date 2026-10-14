@@ -86,6 +86,10 @@ enum DoseActivityController {
             pillsLeft: snap.pillsLeft,
             concentrationRatio: actual.isEmpty ? nil : DoseEngine.totalPlasma(actual, at: now, curve: snap.plasmaCurve),
             predictedPeakAt: calculatePeak ? DoseEngine.nextLocalPlasmaPeak(doses: actual, now: now, curve: snap.plasmaCurve) : nil,
+            episodeStartedAt: snap.episodeStartedAt.flatMap {
+                $0.timeIntervalSinceReferenceDate.isFinite && $0 <= now ? $0 : nil
+            },
+            curve: DoseActivityCurve.make(doses: actual, now: now, curve: snap.plasmaCurve),
             refreshedAt: now)
     }
 

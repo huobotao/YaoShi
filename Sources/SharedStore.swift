@@ -32,6 +32,7 @@ struct SharedSnapshot: Codable {
     /// 小组件使用与主 App 相同的自定义曲线参数；旧快照按说明书默认值计算。
     var plasmaPeakTenthHoursOverride: Int? = nil
     var plasmaHalfLifeTenthHoursOverride: Int? = nil
+    var episodeStartedAt: Date? = nil
     var updatedAt: Date = Date()
 
     /// 还原成 Dose 数组
@@ -55,9 +56,9 @@ struct SharedSnapshot: Codable {
 }
 
 enum SharedStore {
-    private static let service = "com.richardhuo.yaoshi.archive.v21012r2.snapshot"
+    private static let service = "com.richardhuo.yaoshi.archive.v21012r4.snapshot"
     private static let account = "current"
-    private static let group = "P272ZF8FA9.com.richardhuo.yaoshi.archive.v21012r2.shared"
+    private static let group = "P272ZF8FA9.com.richardhuo.yaoshi.archive.v21012r4.shared"
 
     private static func baseQuery() -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,

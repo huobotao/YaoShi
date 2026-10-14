@@ -17,7 +17,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 TOPIC = 'com.richardhuo.yaoshi.push-type.liveactivity'
-FIELDS = set('lastDoseAt lastMg phaseRaw level remainingRaw plasmaSlopePerHour peakEndAt effectEndAt takenToday targetAt skippedToday pillsLeft concentrationRatio predictedPeakAt refreshedAt'.split())
+FIELDS = set('lastDoseAt lastMg phaseRaw level remainingRaw plasmaSlopePerHour peakEndAt effectEndAt takenToday targetAt skippedToday pillsLeft concentrationRatio predictedPeakAt refreshedAt episodeStartedAt curve'.split())
 REQUIRED = set('lastMg phaseRaw level takenToday skippedToday pillsLeft refreshedAt'.split())
 
 
@@ -51,6 +51,24 @@ def integer(value):
     return isinstance(value, int) and not isinstance(value, bool)
 
 
+def finite(value):
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
+
+
+def validate_curve(value, refreshed_at):
+    if value is None:
+        return
+    if not isinstance(value, dict) or value.keys() != {'startAt', 'endAt', 'upperLevel', 'samples'}:
+        raise ValueError('Invalid model curve fields')
+    if not all(finite(value[key]) for key in ('startAt', 'endAt', 'upperLevel')) or not finite(refreshed_at):
+        raise ValueError('Invalid model curve numbers')
+    if not value['startAt'] < refreshed_at < value['endAt'] or value['upperLevel'] < 1.15:
+        raise ValueError('Invalid model curve range')
+    samples = value['samples']
+    if not isinstance(samples, list) or len(samples) != 97 or not all(integer(x) and 0 <= x <= 10000 for x in samples):
+        raise ValueError('Invalid model curve samples')
+
+
 def validate(body, now, environment):
     if not isinstance(body, dict) or not integer(body.get('generation')) or not 0 <= body['generation'] < 2**63:
         raise ValueError('Invalid generation')
@@ -80,7 +98,12 @@ def validate(body, now, environment):
         if not isinstance(state, dict) or not REQUIRED <= state.keys() or state.keys() - FIELDS:
             raise ValueError('Invalid display state fields')
         for key, value in state.items():
-            if key in {'lastMg', 'takenToday', 'pillsLeft'}:
+            if key == 'curve':
+                validate_curve(value, state.get('refreshedAt'))
+            elif key == 'episodeStartedAt':
+                if value is not None and (not finite(value) or not finite(state.get('refreshedAt')) or value > state['refreshedAt']):
+                    raise ValueError('Invalid episode start')
+            elif key in {'lastMg', 'takenToday', 'pillsLeft'}:
                 if not integer(value) or not -(2**63) <= value < 2**63:
                     raise ValueError('Invalid integer display value')
             elif key in {'level', 'refreshedAt'}:

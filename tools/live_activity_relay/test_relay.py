@@ -115,6 +115,35 @@ class Tests(unittest.TestCase):
             with self.subTest(body=body), self.assertRaises(ValueError):
                 validate(body, NOW, 'sandbox')
 
+    def test_bounded_curve_payload_and_legacy_compatibility(self):
+        validate(registration(), NOW, 'sandbox')
+        body = registration()
+        state = body['schedule'][0]['contentState']
+        now = state['refreshedAt']
+        state['episodeStartedAt'] = now - 3600
+        state['curve'] = dict(startAt=now-86400, endAt=now+43200, upperLevel=4.5, samples=[10000]*97)
+        validate(body, NOW, 'sandbox')
+        envelope = {'aps': {'timestamp': NOW, 'event': 'update', 'content-state': state, 'stale-date': NOW+60}}
+        self.assertLess(len(json.dumps(envelope).encode()), 4096)
+        curve = state['curve']
+        invalid = [dict(curve, samples=[0]*98), dict(curve, samples=[0]*96),
+                   dict(curve, samples=[True]*97), dict(curve, samples=[10001]*97),
+                   dict(curve, samples=[-1]*97), dict(curve, samples=[1.5]*97),
+                   dict(curve, startAt=now), dict(curve, endAt=now),
+                   dict(curve, upperLevel=float('nan')), dict(curve, upperLevel=0),
+                   dict(curve, unexpected=1), [0]*97]
+        for candidate in invalid:
+            with self.subTest(candidate=candidate), self.assertRaises(ValueError):
+                altered = copy.deepcopy(body)
+                altered['schedule'][0]['contentState']['curve'] = candidate
+                validate(altered, NOW, 'sandbox')
+        state['curve'] = None
+        validate(body, NOW, 'sandbox')
+        for start in (now+1, float('inf'), True):
+            with self.subTest(episode_start=start), self.assertRaises(ValueError):
+                state['episodeStartedAt'] = start
+                validate(body, NOW, 'sandbox')
+
     def test_http_authentication_and_device_scope(self):
         server = ThreadingHTTPServer(('127.0.0.1', 0), handler_for(self.relay, {'a': 'a'*32, 'b': 'b'*32}))
         thread = threading.Thread(target=server.serve_forever, daemon=True)

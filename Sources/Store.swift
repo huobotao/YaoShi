@@ -687,6 +687,8 @@ final class Store: ObservableObject {
         s.skippedToday = skippedToday
         s.plasmaPeakTenthHoursOverride = settings.plasmaPeakTenthHoursOverride
         s.plasmaHalfLifeTenthHoursOverride = settings.plasmaHalfLifeTenthHoursOverride
+        s.episodeStartedAt = DoseEpisode(doses: doses, selection: doseEpisode,
+            now: s.status.generatedAt, newRoundGapHours: settings.newRoundGapHours).start?.at
         s.recentDoses = doses.filter { $0.at <= s.status.generatedAt }
             .sorted { $0.at < $1.at }
             .map { DoseTick(at: $0.at, mg: $0.mg, food: $0.food) }
