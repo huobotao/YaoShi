@@ -103,7 +103,7 @@ struct YaoShiApp: App {
                 .task(id: phase) {
                     guard phase == .active else { return }
                     while !Task.isCancelled {
-                        do { try await Task.sleep(nanoseconds: 60_000_000_000) }
+                        do { try await Task.sleep(nanoseconds: 30_000_000_000) }
                         catch { return }
                         guard !Task.isCancelled, phase == .active else { return }
                         store.publish()

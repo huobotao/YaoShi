@@ -377,7 +377,7 @@ struct DoseLiveActivity: Widget {
                     details(st, stale: stale)
                 }
             } compactLeading: {
-                Image(systemName: "pills.fill").font(.system(size: 11)).foregroundStyle(W.teal)
+                trendArrow(st, isStale: stale)
             } compactTrailing: {
                 Text(ratio(st, stale: stale))
                     .font(.system(size: 13, weight: .semibold)).monospacedDigit()
@@ -391,6 +391,25 @@ struct DoseLiveActivity: Widget {
             }
             .widgetURL(URL(string: "yaoshi://dashboard"))
             .keylineTint(W.teal)
+        }
+    }
+
+    @ViewBuilder
+    private func trendArrow(_ st: DoseAttributes.ContentState, isStale: Bool) -> some View {
+        if let slope = st.plasmaSlopePerHour, slope.isFinite, !isStale {
+            Image(systemName: "arrow.right")
+                .font(.system(size: 15, weight: .bold))
+                .rotationEffect(.degrees(PlasmaTrend.angleDegrees(slope: slope)))
+                .frame(width: 22, height: 22)
+                .foregroundStyle(W.teal)
+                .accessibilityLabel(abs(slope) < 1e-9 ? "浓度平稳" : slope > 0 ? "浓度上升" : "浓度下降")
+                .accessibilityValue(String(format: "每小时变化 %+.3f 倍", slope))
+        } else {
+            Image(systemName: "questionmark")
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 22, height: 22)
+                .foregroundStyle(W.dim)
+                .accessibilityLabel("趋势等待更新")
         }
     }
 
@@ -428,7 +447,10 @@ struct DoseLiveActivity: Widget {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("药时 · 相对浓度估算").font(.system(size: 11)).foregroundStyle(W.dim)
+                    HStack(spacing: 5) {
+                        trendArrow(st, isStale: stale)
+                        Text("药时 · 相对浓度估算").font(.system(size: 11)).foregroundStyle(W.dim)
+                    }
                     Text(ratio(st, stale: stale))
                         .font(.system(size: 32, weight: .bold, design: .rounded))
                         .monospacedDigit().foregroundStyle(W.teal)

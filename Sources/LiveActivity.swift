@@ -17,6 +17,8 @@ struct DoseAttributes: ActivityAttributes {
         var level: Double
         /// 剩余有效时间比例 0…1（进度条用）。旧版活动没有这个字段，解码为 nil。
         var remainingRaw: Double? = nil
+        /// Total model concentration change per hour; absent on legacy activities.
+        var plasmaSlopePerHour: Double? = nil
 
         var remaining: Double { remainingRaw ?? 0 }
         /// 高峰结束时刻

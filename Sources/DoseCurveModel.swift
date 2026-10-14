@@ -139,3 +139,38 @@ enum CurveTimeViewport {
         return center.addingTimeInterval(-span / 2)...center.addingTimeInterval(span / 2)
     }
 }
+
+
+/// Instantaneous derivative of the same total concentration model used by the chart.
+/// Fixed icon scale: 1 relative concentration unit/hour is a 45-degree ascent.
+/// Chart zoom/aspect ratio must not change this compact indicator's meaning.
+enum PlasmaTrend {
+    static func slope(doses: [Dose], at now: Date,
+                      curve: PlasmaCurveConfiguration = .standard) -> Double {
+        let ka = curve.absorptionRate
+        let ke = curve.eliminationRate
+        let peak = curve.peakLevel
+        guard ka.isFinite, ke.isFinite, peak.isFinite, peak > 0 else { return 0 }
+        return doses.reduce(0) { result, dose in
+            let hours = now.timeIntervalSince(dose.at) / 3600
+            let x = hours - curve.lag(for: dose.food)
+            // At the absorption kink use the pre-onset (flat) side.
+            guard hours.isFinite, x > 0 else { return result }
+            let derivative: Double
+            if abs(ka - ke) < max(ka, ke) * 1e-8 {
+                derivative = (1 - ke * x) * exp(-ke * x)
+            } else {
+                let signed = -ke * exp(-ke * x) + ka * exp(-ka * x)
+                derivative = ka > ke ? signed : -signed
+            }
+            let contribution = derivative / peak * DoseEngine.doseWeight(dose.mg)
+            return contribution.isFinite ? result + contribution : result
+        }
+    }
+
+    static func angleDegrees(slope: Double) -> Double {
+        guard slope.isFinite else { return 0 }
+        // SwiftUI screen coordinates increase downwards.
+        return -atan(slope) * 180 / .pi
+    }
+}

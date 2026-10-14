@@ -38,6 +38,13 @@ import Foundation
         check(close(state.concentrationRatio, chart.currentLevel), "all records and custom curve agree with main chart")
         check(abs(chart.currentLevel - DoseEngine.totalPlasma(doses, at: now)) > 0.001,
               "custom parameter fixture differs from standard curve")
+        check(close(state.plasmaSlopePerHour, PlasmaTrend.slope(doses: doses, at: now, curve: snapshot.plasmaCurve)),
+              "activity slope uses all doses and custom parameters")
+        var staleSnapshot = snapshot
+        staleSnapshot.status = DoseStatus.compute(doses: doses, now: now.addingTimeInterval(-3 * hour))
+        let renewed = DoseActivityController.state(from: staleSnapshot, now: now)
+        check(renewed.phaseRaw == state.phaseRaw && renewed.remaining == state.remaining,
+              "renewed state recomputes phase and remaining alongside slope")
         check(state.refreshedAt == now, "state records its actual evaluation time")
 
         var futureSnapshot = snapshot
@@ -71,10 +78,12 @@ import Foundation
         let decoded = try JSONDecoder().decode(DoseAttributes.ContentState.self, from: encoded)
         check(decoded == state, "new activity state round trips without losing plasma")
         var oldObject = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
+        oldObject.removeValue(forKey: "plasmaSlopePerHour")
         oldObject.removeValue(forKey: "concentrationRatio")
         oldObject.removeValue(forKey: "predictedPeakAt")
         let oldData = try JSONSerialization.data(withJSONObject: oldObject)
         let oldState = try JSONDecoder().decode(DoseAttributes.ContentState.self, from: oldData)
+        check(oldState.plasmaSlopePerHour == nil, "old activity slope remains unknown")
         check(oldState.concentrationRatio == nil, "old JSON without plasma decodes compatibly")
         check(oldState.predictedPeakAt == nil, "old JSON without peak decodes compatibly")
         check(oldState.lastDoseAt == state.lastDoseAt && oldState.level == state.level,
@@ -87,13 +96,13 @@ import Foundation
         check(DoseActivityController.nextStale(for: peakDue, now: now) == peakDue.predictedPeakAt,
               "peak countdown expires exactly at predicted peak")
         let staleAt = DoseActivityController.nextStale(for: state, now: now)
-        check(staleAt > now && staleAt <= now.addingTimeInterval(300),
-              "fresh activity becomes stale within five minutes")
+        check(staleAt > now && staleAt <= now.addingTimeInterval(60),
+              "fresh activity becomes stale within one minute")
         var early = state
         early.peakEndAt = now.addingTimeInterval(30)
         check(DoseActivityController.nextStale(for: early, now: now) <= early.peakEndAt!,
               "earlier state transition remains the stale deadline")
-        check(DoseActivityController.nextStale(for: oldState, now: now) <= now.addingTimeInterval(300),
+        check(DoseActivityController.nextStale(for: oldState, now: now) <= now.addingTimeInterval(60),
               "old content also gets a bounded stale deadline")
         print("PASS: \(passed) live activity checks; state JSON \(encoded.count) bytes")
     }

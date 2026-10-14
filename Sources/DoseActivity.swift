@@ -30,15 +30,17 @@ enum DoseActivityController {
             doses = []
         }
         let actual = doses.filter { $0.at <= now && $0.at.timeIntervalSinceReferenceDate.isFinite && $0.mg > 0 }
+        let status = DoseStatus.compute(doses: actual, now: now, curve: snap.plasmaCurve)
         return DoseAttributes.ContentState(
-            lastDoseAt: snap.status.lastDoseAt,
-            lastMg: snap.status.lastMg,
-            phaseRaw: snap.status.phase.rawValue,
-            level: snap.status.level,
-            remainingRaw: snap.status.remaining,
-            peakEndAt: snap.status.peakEndAt,
-            effectEndAt: snap.status.effectEndAt,
-            takenToday: snap.status.takenToday,
+            lastDoseAt: status.lastDoseAt,
+            lastMg: status.lastMg,
+            phaseRaw: status.phase.rawValue,
+            level: status.level,
+            remainingRaw: status.remaining,
+            plasmaSlopePerHour: actual.isEmpty ? nil : PlasmaTrend.slope(doses: actual, at: now, curve: snap.plasmaCurve),
+            peakEndAt: status.peakEndAt,
+            effectEndAt: status.effectEndAt,
+            takenToday: status.takenToday,
             targetAt: snap.targetAt,
             skippedToday: snap.skippedToday,
             pillsLeft: snap.pillsLeft,
@@ -47,11 +49,11 @@ enum DoseActivityController {
             refreshedAt: now)
     }
 
-    /// 下一个状态会变的时刻：高峰结束、药效结束、目标时刻、次日凌晨，取最早的一个
+    /// Trend expires after 60 seconds or at an earlier phase boundary; expiry is not an update.
     static func nextStale(for st: DoseAttributes.ContentState, now: Date) -> Date {
         let cal = Calendar.current
         let tomorrow = cal.startOfDay(for: cal.date(byAdding: .day, value: 1, to: now) ?? now)
-        let candidates: [Date?] = [now.addingTimeInterval(300), tomorrow.addingTimeInterval(300),
+        let candidates: [Date?] = [now.addingTimeInterval(60), tomorrow.addingTimeInterval(300),
                                    st.predictedPeakAt, st.peakEndAt, st.effectEndAt, st.targetAt]
         return candidates.compactMap { $0 }.filter { $0 > now }.min() ?? tomorrow
     }
@@ -92,6 +94,10 @@ enum DoseActivityController {
                 var item: [String: Any] = ["id": activity.id,
                     "state": String(describing: activity.activityState),
                     "refreshedAt": state.refreshedAt.timeIntervalSince1970]
+                if let slope = state.plasmaSlopePerHour {
+                    item["plasmaSlopePerHour"] = slope
+                    item["trendAngleDegrees"] = PlasmaTrend.angleDegrees(slope: slope)
+                }
                 if let value = state.concentrationRatio { item["concentrationRatio"] = value }
                 if let peak = state.predictedPeakAt { item["predictedPeakAt"] = peak.timeIntervalSince1970 }
                 return item
