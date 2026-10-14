@@ -17,7 +17,7 @@ struct BackgroundRefreshExperimentEntry: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("后台刷新实验")
                         .font(.headline)
-                    Text(experiment.isRunning ? "实验进行中 · 点此查看或停止" : "点此开始 · 首次开启会申请定位权限")
+                    Text(experiment.isRunning ? (experiment.endsAt == nil ? "等待授权 · 点此查看" : "实验进行中 · 点此查看或停止") : "点此开始 · 查看定位权限")
                         .font(.caption)
                         .multilineTextAlignment(.leading)
                 }
@@ -55,6 +55,18 @@ struct BackgroundRefreshExperimentSection: View {
 
     var body: some View {
         Section {
+            LabeledContent("定位权限", value: experiment.authorizationText)
+                .accessibilityIdentifier("backgroundRefreshLocationAuthorization")
+            if experiment.authorizationStatus != .authorizedAlways {
+                Button("申请始终允许定位") {
+                    experiment.requestAlwaysAuthorization()
+                }
+                .disabled(experiment.needsSettings)
+                .accessibilityIdentifier("requestAlwaysLocationAuthorization")
+            }
+            Text(experiment.alwaysAuthorizationMessage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             LabeledContent("状态") {
                 Text(experiment.statusText)
                     .multilineTextAlignment(.trailing)
@@ -81,7 +93,7 @@ struct BackgroundRefreshExperimentSection: View {
                 .disabled(experiment.needsSettings)
                 .accessibilityIdentifier("startBackgroundRefreshExperiment")
             }
-            if experiment.needsSettings {
+            if experiment.needsSettings || experiment.authorizationStatus != .notDetermined {
                 Button("打开系统设置查看定位权限") {
                     guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
                     openURL(url)

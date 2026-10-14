@@ -16,6 +16,19 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
     @Published private(set) var endsAt: Date?
     @Published private(set) var needsSettings = false
     @Published private(set) var authorizationStatus: CLAuthorizationStatus = .notDetermined
+    @Published private(set) var alwaysAuthorizationMessage = "可单独申请始终允许定位；授权本身不会启动实验。"
+    @Published private(set) var pendingAlwaysAuthorization = false
+
+    var authorizationText: String {
+        switch authorizationStatus {
+        case .notDetermined: return "尚未选择"
+        case .authorizedWhenInUse: return "使用 App 期间"
+        case .authorizedAlways: return "始终允许"
+        case .denied: return "不允许"
+        case .restricted: return "受到系统限制"
+        @unknown default: return "未知"
+        }
+    }
 
     private lazy var manager: CLLocationManager = {
         let manager = CLLocationManager()
@@ -50,6 +63,43 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
     func start(publish: @escaping @MainActor () -> Void) {
         configure(publish: publish)
         start()
+    }
+
+    /// Always authorization is a separate explicit action. Never chain an
+    /// automatic upgrade request after the initial When In Use prompt.
+    func requestAlwaysAuthorization() {
+        guard isExperimentBuild else { return }
+        guard UIApplication.shared.applicationState == .active else {
+            alwaysAuthorizationMessage = "请在药时前台申请定位权限。"
+            return
+        }
+        guard let usage = Bundle.main.object(forInfoDictionaryKey: "NSLocationAlwaysAndWhenInUseUsageDescription") as? String,
+              !usage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            alwaysAuthorizationMessage = "此版本未配置始终定位权限说明。"
+            return
+        }
+        ensureLifecycle()
+        guard !needsSettings else {
+            alwaysAuthorizationMessage = "请打开系统设置查看定位权限；系统定位服务也需要开启。"
+            return
+        }
+        switch authorizationStatus {
+        case .notDetermined:
+            pendingAlwaysAuthorization = true
+            alwaysAuthorizationMessage = "请先允许使用 App 期间定位，再点一次“申请始终允许定位”。"
+            manager.requestWhenInUseAuthorization()
+        case .authorizedWhenInUse:
+            pendingAlwaysAuthorization = false
+            alwaysAuthorizationMessage = "已请求升级为始终允许；若系统没有弹窗，请在系统设置的定位权限中查看。选择“允许一次”时可能无法直接升级。"
+            manager.requestAlwaysAuthorization()
+        case .authorizedAlways:
+            pendingAlwaysAuthorization = false
+            alwaysAuthorizationMessage = "已允许始终定位；仍需手动开始实验，且不保证后台持续运行。"
+        case .denied, .restricted:
+            alwaysAuthorizationMessage = "请打开系统设置查看定位权限。"
+        @unknown default:
+            alwaysAuthorizationMessage = "当前系统权限状态不支持申请。"
+        }
     }
 
     /// Call only from the user's explicit experiment button while the app is foreground.
@@ -100,6 +150,7 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
         guard isExperimentBuild else { return }
         authorizationStatus = manager.authorizationStatus
         needsSettings = !CLLocationManager.locationServicesEnabled() || authorizationStatus == .denied || authorizationStatus == .restricted
+        updateAlwaysAuthorizationMessage()
         if expireIfNeeded() { return }
         if isRunning && needsSettings {
             stopWithStatus("定位服务或权限不可用，实验停止", event: "locationUnavailable")
@@ -185,10 +236,23 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
     private func authorizationChanged() {
         authorizationStatus = manager.authorizationStatus
         needsSettings = !CLLocationManager.locationServicesEnabled() || authorizationStatus == .denied || authorizationStatus == .restricted
+        updateAlwaysAuthorizationMessage()
         if isRunning && needsSettings {
             stopWithStatus("定位权限已撤销，实验停止", event: "authorizationRevoked")
         } else if pendingStart {
             beginSessionIfForeground()
+        }
+    }
+
+    private func updateAlwaysAuthorizationMessage() {
+        if authorizationStatus == .authorizedAlways {
+            pendingAlwaysAuthorization = false
+            alwaysAuthorizationMessage = "已允许始终定位；仍需手动开始实验，且不保证后台持续运行。"
+        } else if pendingAlwaysAuthorization && authorizationStatus == .authorizedWhenInUse {
+            alwaysAuthorizationMessage = "已获使用 App 期间定位权限。请再点一次“申请始终允许定位”继续；不会自动再次弹窗。"
+        } else if authorizationStatus == .denied || authorizationStatus == .restricted {
+            pendingAlwaysAuthorization = false
+            alwaysAuthorizationMessage = "定位未获允许，请打开系统设置查看。"
         }
     }
 

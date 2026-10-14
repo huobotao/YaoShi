@@ -364,7 +364,10 @@ struct DoseLiveActivity: Widget {
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("相对浓度 · 估算").font(.system(size: 10)).foregroundStyle(W.dim)
+                        HStack(spacing: 3) {
+                            trendArrow(st, isStale: stale, compact: true)
+                            Text("相对浓度 · 估算").font(.system(size: 10)).foregroundStyle(W.dim)
+                        }
                         Text(ratio(st, stale: stale))
                             .font(.system(size: 24, weight: .bold, design: .rounded))
                             .monospacedDigit().foregroundStyle(W.teal)
@@ -378,13 +381,30 @@ struct DoseLiveActivity: Widget {
                     details(st, stale: stale)
                 }
             } compactLeading: {
-                trendArrow(st, isStale: stale)
+                if st.predictedPeakTimerInterval != nil {
+                    // Keep concentration and the native countdown on separate sides.
+                    // The optional arrow is the first item dropped when space is tight.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 2) {
+                            trendArrow(st, isStale: stale, compact: true)
+                            compactRatio(st, stale: stale)
+                        }.fixedSize(horizontal: true, vertical: false)
+                        compactRatio(st, stale: stale)
+                    }
+                } else {
+                    trendArrow(st, isStale: stale)
+                }
             } compactTrailing: {
-                Text(ratio(st, stale: stale))
-                    .font(.system(size: 13, weight: .semibold)).monospacedDigit()
-                    .lineLimit(1).minimumScaleFactor(0.6)
-                    .foregroundStyle(W.teal)
-                    .accessibilityLabel(stale ? "上次浓度估算 " + ratio(st, stale: true) : "估算相对浓度 " + ratio(st, stale: false))
+                if let interval = st.predictedPeakTimerInterval {
+                    Text(timerInterval: interval, countsDown: true, showsHours: true)
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .monospacedDigit().lineLimit(1).minimumScaleFactor(0.8)
+                        .frame(width: 56, alignment: .trailing)
+                        .foregroundStyle(W.teal)
+                        .accessibilityLabel("预计达峰倒计时")
+                } else {
+                    compactRatio(st, stale: stale)
+                }
             } minimal: {
                 Text(ratio(st, stale: stale))
                     .font(.system(size: 10, weight: .semibold)).monospacedDigit()
@@ -395,20 +415,28 @@ struct DoseLiveActivity: Widget {
         }
     }
 
+    private func compactRatio(_ st: DoseAttributes.ContentState, stale: Bool) -> some View {
+        Text(ratio(st, stale: stale))
+            .font(.system(size: 13, weight: .semibold)).monospacedDigit()
+            .lineLimit(1).minimumScaleFactor(0.6)
+            .foregroundStyle(W.teal)
+            .accessibilityLabel(stale ? "上次浓度估算 " + ratio(st, stale: true) : "估算相对浓度 " + ratio(st, stale: false))
+    }
+
     @ViewBuilder
-    private func trendArrow(_ st: DoseAttributes.ContentState, isStale: Bool) -> some View {
+    private func trendArrow(_ st: DoseAttributes.ContentState, isStale: Bool, compact: Bool = false) -> some View {
         if let slope = st.plasmaSlopePerHour, slope.isFinite, !isStale {
             Image(systemName: "arrow.right")
-                .font(.system(size: 15, weight: .bold))
+                .font(.system(size: compact ? 11 : 15, weight: .bold))
                 .rotationEffect(.degrees(PlasmaTrend.angleDegrees(slope: slope)))
-                .frame(width: 22, height: 22)
+                .frame(width: compact ? 14 : 22, height: 22)
                 .foregroundStyle(W.teal)
                 .accessibilityLabel(abs(slope) < 1e-9 ? "浓度平稳" : slope > 0 ? "浓度上升" : "浓度下降")
                 .accessibilityValue(String(format: "每小时变化 %+.3f 倍", slope))
         } else {
             Image(systemName: "questionmark")
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 22, height: 22)
+                .font(.system(size: compact ? 10 : 13, weight: .semibold))
+                .frame(width: compact ? 14 : 22, height: 22)
                 .foregroundStyle(W.dim)
                 .accessibilityLabel("趋势等待更新")
         }
@@ -417,12 +445,12 @@ struct DoseLiveActivity: Widget {
     @ViewBuilder
     private func peak(_ st: DoseAttributes.ContentState, stale: Bool) -> some View {
         VStack(alignment: .trailing, spacing: 2) {
-            if !stale, let at = st.predictedPeakAt, at > st.refreshedAt {
-                Text("预计距峰").font(.system(size: 10)).foregroundStyle(W.dim)
-                Text(timerInterval: st.refreshedAt...at, countsDown: true)
+            if let interval = st.predictedPeakTimerInterval {
+                Text(stale ? "上次预计距峰" : "预计距峰").font(.system(size: 10)).foregroundStyle(W.dim)
+                Text(timerInterval: interval, countsDown: true)
                     .font(.system(size: 19, weight: .semibold, design: .rounded))
                     .monospacedDigit().frame(maxWidth: 96)
-                Text("约 " + Fmt2.hm(at)).font(.system(size: 9)).foregroundStyle(W.dim)
+                Text("约 " + Fmt2.hm(interval.upperBound)).font(.system(size: 9)).foregroundStyle(W.dim)
             } else {
                 Text(stale ? "估算待刷新" : "暂无后续峰值")
                     .font(.system(size: 11)).foregroundStyle(W.dim)

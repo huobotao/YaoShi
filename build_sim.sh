@@ -67,6 +67,7 @@ path = sys.argv[1]
 with open(path, 'rb') as f: info = plistlib.load(f)
 info['UIBackgroundModes'] = ['location']
 info['NSLocationWhenInUseUsageDescription'] = '经你选择，使用定位服务进行最长15分钟的后台浓度刷新实验；不保存或上传坐标，可随时停止。'
+info['NSLocationAlwaysAndWhenInUseUsageDescription'] = '经你选择，允许药时在后台使用定位服务，进行手动开启的最长15分钟浓度刷新实验；不保存或上传坐标，可随时停止。始终授权不代表永久运行。'
 info['YaoShiBackgroundLocationExperiment'] = True
 with open(path, 'wb') as f: plistlib.dump(info, f)
 PY
