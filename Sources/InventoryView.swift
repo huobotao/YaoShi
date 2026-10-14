@@ -1,37 +1,33 @@
 import SwiftUI
 
-struct InventoryCard: View {
+/// A compact entry point beside the elapsed-time value, without a separate card.
+struct InventoryInlineButton: View {
     @EnvironmentObject var store: Store
     @State private var showingRecount = false
 
     var body: some View {
-        Card(title: "剩余库存", systemImage: "pills") {
-            HStack(alignment: .firstTextBaseline) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("\(store.supply.pillsLeft)")
-                        .font(.system(size: 36, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                    Text("粒").font(.headline)
+        Button { showingRecount = true } label: {
+            HStack(spacing: 4) {
+                Text("库存 \(store.supply.pillsLeft) 粒")
+                    .monospacedDigit()
+                    .accessibilityIdentifier("inventoryCount")
+                if store.inventoryNeedsReview {
+                    Image(systemName: "exclamationmark.circle")
+                        .foregroundStyle(YS.amber)
                 }
-                .foregroundStyle(YS.text)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("剩余库存 \(store.supply.pillsLeft) 粒")
-                .accessibilityIdentifier("inventoryCount")
-                Spacer()
-                Button("清点修改") { showingRecount = true }
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(YS.teal)
-                    .accessibilityIdentifier("inventoryRecountButton")
             }
-            Text("手动清点 · 服药暂不自动扣减")
-                .font(.caption)
-                .foregroundStyle(YS.dim)
-            if store.inventoryNeedsReview {
-                Label("设备间库存有差异，请清点核对", systemImage: "exclamationmark.circle")
-                    .font(.caption)
-                    .foregroundStyle(YS.amber)
-            }
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(YS.teal)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("剩余库存 \(store.supply.pillsLeft) 粒")
+        .accessibilityValue(store.inventoryNeedsReview ? "设备间库存有差异，请清点核对" : "手动清点库存")
+        .accessibilityHint("轻点清点修改，服药暂不自动扣减")
+        .accessibilityIdentifier("inventoryRecountButton")
         .sheet(isPresented: $showingRecount) {
             InventoryRecountView(initialCount: store.supply.pillsLeft)
                 .environmentObject(store)
@@ -58,6 +54,10 @@ private struct InventoryRecountView: View {
     var body: some View {
         NavigationStack {
             Form {
+                if store.inventoryNeedsReview {
+                    Label("设备间库存有差异，请清点核对", systemImage: "exclamationmark.circle")
+                        .foregroundStyle(YS.amber)
+                }
                 Section {
                     HStack {
                         Text("实际剩余")
