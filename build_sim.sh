@@ -43,7 +43,7 @@ plistlib.dump({
  "UISupportedInterfaceOrientations~ipad":["UIInterfaceOrientationPortrait","UIInterfaceOrientationPortraitUpsideDown","UIInterfaceOrientationLandscapeLeft","UIInterfaceOrientationLandscapeRight"],
  "NSLocalNetworkUsageDescription":"经你确认后，与 Apple TV 配对并发送曲线数据。",
  "NSBonjourServices":["_yaoshi-tv-v1._tcp"],
- "NSSupportsLiveActivities":True,
+ "NSSupportsLiveActivities":True,"NSSupportsLiveActivitiesFrequentUpdates":True,
  "CFBundleURLTypes":[{"CFBundleURLName":"com.richardhuo.yaoshi","CFBundleURLSchemes":["yaoshi"]}],"CFBundleSupportedPlatforms":["iPhoneSimulator"],
  "UIDeviceFamily":[1,2],
 }, open(sys.argv[1],'wb'))

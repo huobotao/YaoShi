@@ -101,18 +101,16 @@ print("  图标键已并入 Info.plist:", ", ".join(part.keys()))
 PY
 fi
 
-echo "==> 找通配描述文件"
-WILDCARD=""
-for f in "$PROFILE_DIR"/*.mobileprovision; do
-  appid=$(security cms -D -i "$f" 2>/dev/null | plutil -extract Entitlements.application-identifier raw - 2>/dev/null)
-  if [ "$appid" = "P272ZF8FA9.*" ]; then WILDCARD="$f"; break; fi
-done
-[ -z "$WILDCARD" ] && { echo "找不到通配描述文件"; exit 1; }
-echo "使用: $(basename "$WILDCARD")"
-cp "$WILDCARD" "$APP/embedded.mobileprovision"
+echo "==> 检查签名描述文件"
+PROFILE_ARGS=("P272ZF8FA9.$BUNDLE_ID")
+if [ "${YAOSHI_REQUIRE_PUSH:-0}" = "1" ]; then PROFILE_ARGS+=(--require-push); fi
+if [ -n "${YAOSHI_APP_PROFILE:-}" ]; then PROFILE_ARGS+=(--profile "$YAOSHI_APP_PROFILE"); fi
+APP_PROFILE=$(python3 "$ROOTDIR/scripts/select_profile.py" "${PROFILE_ARGS[@]}")
+echo "使用: $(basename "$APP_PROFILE")"
+cp "$APP_PROFILE" "$APP/embedded.mobileprovision"
 
 echo "==> 生成 entitlements"
-security cms -D -i "$WILDCARD" > "$BUILD/profile.plist"
+security cms -D -i "$APP_PROFILE" > "$BUILD/profile.plist"
 /usr/libexec/PlistBuddy -x -c 'Print :Entitlements' "$BUILD/profile.plist" > "$BUILD/ent.plist"
 plutil -replace application-identifier -string "P272ZF8FA9.$BUNDLE_ID" "$BUILD/ent.plist"
 # 描述文件的通配符表示签名许可，安装包必须声明实际使用的具体共享组。

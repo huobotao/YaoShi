@@ -64,10 +64,15 @@ PLIST
 python3 "$ROOT/scripts/stamp_version.py" "$EXT/Info.plist" --parent "$APP/Info.plist"
 
 echo "==> Widget entitlements"
-cp "$BUILD/ent.plist" "$BUILD/ent-widget.plist"
+# An explicit push-enabled app profile cannot sign the widget's different ID.
+WIDGET_PROFILE_ARGS=("P272ZF8FA9.com.richardhuo.yaoshi.widget")
+if [ -n "${YAOSHI_WIDGET_PROFILE:-}" ]; then WIDGET_PROFILE_ARGS+=(--profile "$YAOSHI_WIDGET_PROFILE"); fi
+WIDGET_PROFILE=$(python3 "$ROOT/scripts/select_profile.py" "${WIDGET_PROFILE_ARGS[@]}")
+security cms -D -i "$WIDGET_PROFILE" > "$BUILD/profile-widget.plist"
+/usr/libexec/PlistBuddy -x -c 'Print :Entitlements' "$BUILD/profile-widget.plist" > "$BUILD/ent-widget.plist"
 plutil -replace application-identifier -string "P272ZF8FA9.com.richardhuo.yaoshi.widget" "$BUILD/ent-widget.plist"
 plutil -replace keychain-access-groups -json '["P272ZF8FA9.com.richardhuo.yaoshi.widget","P272ZF8FA9.com.richardhuo.yaoshi.shared"]' "$BUILD/ent-widget.plist"
-cp "$APP/embedded.mobileprovision" "$EXT/embedded.mobileprovision"
+cp "$WIDGET_PROFILE" "$EXT/embedded.mobileprovision"
 
 echo "==> 签 Widget"
 xattr -cr "$EXT"

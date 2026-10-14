@@ -1,0 +1,6 @@
+*.json
+*.p8
+*.pem
+*.key
+*.crt
+__pycache__/

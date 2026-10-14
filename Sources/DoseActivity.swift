@@ -50,7 +50,7 @@ enum DoseActivityController {
         }
     }
 
-    nonisolated static func state(from snap: SharedSnapshot, now: Date = Date()) -> DoseAttributes.ContentState {
+    nonisolated static func state(from snap: SharedSnapshot, now: Date = Date(), calculatePeak: Bool = true) -> DoseAttributes.ContentState {
         let doses: [Dose]
         if let ticks = snap.recentDoses {
             doses = ticks.map(\.asDose)
@@ -60,7 +60,17 @@ enum DoseActivityController {
             doses = []
         }
         let actual = doses.filter { $0.at <= now && $0.at.timeIntervalSinceReferenceDate.isFinite && $0.mg > 0 }
-        let status = DoseStatus.compute(doses: actual, now: now, curve: snap.plasmaCurve)
+        // Compute only displayed fields; DoseStatus.compute also performs a 48-hour
+        // threshold search unused by Live Activities, expensive for a future schedule.
+        let last = actual.max { $0.at < $1.at }
+        let hours = last.map { now.timeIntervalSince($0.at) / 3600 } ?? 0
+        let status = DoseStatus(lastDoseAt: last?.at, lastMg: last?.mg ?? 0,
+            phase: last == nil ? .none : DoseEngine.phase(hoursSinceDose: hours),
+            level: last.map { DoseEngine.level(hoursSinceDose: hours, food: $0.food) } ?? 0,
+            remaining: last == nil ? 0 : DoseEngine.remaining(hoursSinceDose: hours),
+            peakEndAt: last.map { DoseEngine.peakEndTime(of: $0) },
+            effectEndAt: last.map { DoseEngine.endTime(of: $0) },
+            takenToday: actual.filter { $0.dateOnly == DateOnly(now) }.count, generatedAt: now)
         return DoseAttributes.ContentState(
             lastDoseAt: status.lastDoseAt,
             lastMg: status.lastMg,
@@ -72,18 +82,18 @@ enum DoseActivityController {
             effectEndAt: status.effectEndAt,
             takenToday: status.takenToday,
             targetAt: snap.targetAt,
-            skippedToday: snap.skippedToday,
+            skippedToday: snap.skippedToday && Calendar.current.isDate(snap.updatedAt, inSameDayAs: now),
             pillsLeft: snap.pillsLeft,
             concentrationRatio: actual.isEmpty ? nil : DoseEngine.totalPlasma(actual, at: now, curve: snap.plasmaCurve),
-            predictedPeakAt: DoseEngine.nextLocalPlasmaPeak(doses: actual, now: now, curve: snap.plasmaCurve),
+            predictedPeakAt: calculatePeak ? DoseEngine.nextLocalPlasmaPeak(doses: actual, now: now, curve: snap.plasmaCurve) : nil,
             refreshedAt: now)
     }
 
     /// Trend expires after 60 seconds or at an earlier phase boundary; expiry is not an update.
-    nonisolated static func nextStale(for st: DoseAttributes.ContentState, now: Date) -> Date {
+    nonisolated static func nextStale(for st: DoseAttributes.ContentState, now: Date, maximumAge: TimeInterval = 60) -> Date {
         let cal = Calendar.current
         let tomorrow = cal.startOfDay(for: cal.date(byAdding: .day, value: 1, to: now) ?? now)
-        let candidates: [Date?] = [now.addingTimeInterval(60), tomorrow.addingTimeInterval(300),
+        let candidates: [Date?] = [now.addingTimeInterval(maximumAge), tomorrow.addingTimeInterval(300),
                                    st.predictedPeakAt, st.peakEndAt, st.effectEndAt, st.targetAt]
         return candidates.compactMap { $0 }.filter { $0 > now }.min() ?? tomorrow
     }
@@ -115,22 +125,33 @@ enum DoseActivityController {
         case .end:
             for activity in Activity<DoseAttributes>.activities {
                 await activity.end(nil, dismissalPolicy: .immediate)
+                LiveActivityPush.withdraw(activity.id)
             }
             report("ended")
         case let .refresh(snap, allowCreation):
             guard isSupported else { report("notAuthorized"); return }
-            let retained = running
+            var retained = running
+            if let old = retained,
+               LiveActivityPush.requiresReplacement(old, snapshot: snap) ||
+                (LiveActivityPush.configured && old.pushToken == nil && allowCreation &&
+                 !(UserDefaults.standard.stringArray(forKey: "pushRequestedActivityIDs") ?? []).contains(old.id)) {
+                await old.end(nil, dismissalPolicy: .immediate)
+                LiveActivityPush.withdraw(old.id)
+                retained = nil
+            }
             // Await removal before either updating or requesting, so repeated refreshes
             // cannot race with cleanup or create multiple lock-screen cards.
             for activity in Activity<DoseAttributes>.activities where activity.id != retained?.id {
                 await activity.end(nil, dismissalPolicy: .immediate)
+                LiveActivityPush.withdraw(activity.id)
             }
             let now = Date()
             let st = state(from: snap, now: now)
-            let content = ActivityContent(state: st, staleDate: nextStale(for: st, now: now))
+            let content = ActivityContent(state: st, staleDate: nextStale(for: st, now: now, maximumAge: LiveActivityPush.configured ? 120 : 60))
             if let activity = retained,
                activity.activityState == .active || activity.activityState == .stale {
                 await activity.update(content)
+                LiveActivityPush.maintain(activity, snapshot: snap)
                 report("updated")
             } else {
                 guard allowCreation, UIApplication.shared.applicationState == .active else {
@@ -138,8 +159,14 @@ enum DoseActivityController {
                     return
                 }
                 do {
-                    _ = try Activity.request(attributes: DoseAttributes(title: "药时"),
-                                             content: content, pushType: nil)
+                    let activity = try Activity.request(attributes: DoseAttributes(title: "药时"),
+                                             content: content, pushType: LiveActivityPush.configured ? .token : nil)
+                    if LiveActivityPush.configured {
+                        var ids = UserDefaults.standard.stringArray(forKey: "pushRequestedActivityIDs") ?? []
+                        ids.append(activity.id)
+                        UserDefaults.standard.set(Array(ids.suffix(20)), forKey: "pushRequestedActivityIDs")
+                    }
+                    LiveActivityPush.maintain(activity, snapshot: snap)
                     report("started")
                 } catch {
                     report("requestFailed", error: String(describing: error))

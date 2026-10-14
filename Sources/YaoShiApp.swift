@@ -46,6 +46,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
     func application(_ app: UIApplication, open url: URL,
                      options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+        guard !LiveActivityReadback.requested else { return false }
         if url.scheme == "yaoshi-partner" {
             Task { @MainActor in await PartnerSharingCoordinator.shared.acceptInvite(url) }
             return true
@@ -60,66 +61,89 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     }
 }
 
+/// Optional Store ownership lets a diagnostic launch avoid all Store side effects.
+@MainActor
+private final class YaoShiLaunchContext: ObservableObject {
+    let store: Store?
+    init(store: Store?) { self.store = store }
+}
+
 @main
 struct YaoShiApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @Environment(\.scenePhase) private var phase
-    @StateObject private var store: Store
+    @StateObject private var launch: YaoShiLaunchContext
 
     init() {
+        if LiveActivityReadback.requested {
+            _launch = StateObject(wrappedValue: YaoShiLaunchContext(store: nil))
+            LiveActivityReadback.capture()
+            return
+        }
         let store = Store()
         // Explicit maintenance only; ordinary launches do not rewrite dose history.
         if let requested = ProcessInfo.processInfo.environment["YAOSHI_CORRECT_40MG_IDS"] {
             let ids = Set(requested.split(separator: ",").compactMap { UUID(uuidString: String($0)) })
             if !ids.isEmpty { _ = store.correctLegacy40mgDoses(ids: ids) }
         }
-        _store = StateObject(wrappedValue: store)
+        _launch = StateObject(wrappedValue: YaoShiLaunchContext(store: store))
         PhoneWatchLink.shared.start(store: store)
     }
 
     var body: some Scene {
         WindowGroup {
-            RootView()
-                .environmentObject(store)
-                .preferredColorScheme(.dark)
-                .tint(YS.teal)
-                .onAppear {
-                    Notifier.configure()
-                    // 自检：只在带 YAOSHI_SELFTEST=1 的调试启动时跑一次，
-                    // 用来证明"按一下 → 真的写进磁盘"这条链路是通的。真机日常使用不会触发。
-                    if ProcessInfo.processInfo.environment["YAOSHI_SELFTEST"] == "1" {
-                        store.quickTake()
-                    }
-                    Notifier.reschedule(store)
-                }
-                .task {
-                    while !Task.isCancelled {
-                        if phase == .active {
-                            await MedicationShareRepository.shared.sync()
+            if let store = launch.store {
+                RootView()
+                    .environmentObject(store)
+                    .preferredColorScheme(.dark)
+                    .tint(YS.teal)
+                    .onAppear {
+                        Notifier.configure()
+                        // 自检：只在带 YAOSHI_SELFTEST=1 的调试启动时跑一次，
+                        // 用来证明"按一下 → 真的写进磁盘"这条链路是通的。真机日常使用不会触发。
+                        if ProcessInfo.processInfo.environment["YAOSHI_SELFTEST"] == "1" {
+                            store.quickTake()
                         }
-                        try? await Task.sleep(nanoseconds: 15_000_000_000)
+                        Notifier.reschedule(store)
                     }
-                }
-                .task(id: phase) {
-                    guard phase == .active else { return }
-                    while !Task.isCancelled {
-                        do { try await Task.sleep(nanoseconds: 30_000_000_000) }
-                        catch { return }
-                        guard !Task.isCancelled, phase == .active else { return }
+                    .task {
+                        while !Task.isCancelled {
+                            if phase == .active {
+                                await MedicationShareRepository.shared.sync()
+                            }
+                            try? await Task.sleep(nanoseconds: 15_000_000_000)
+                        }
+                    }
+                    .task(id: phase) {
+                        guard phase == .active else { return }
+                        while !Task.isCancelled {
+                            do { try await Task.sleep(nanoseconds: 30_000_000_000) }
+                            catch { return }
+                            guard !Task.isCancelled, phase == .active else { return }
+                            store.publish()
+                        }
+                    }
+                    .onReceive(NotificationCenter.default.publisher(
+                        for: UIApplication.didBecomeActiveNotification)) { _ in
+                        // Scene phase may be active before UIKit permits Activity.request.
+                        // Publish again once UIKit confirms foreground execution.
                         store.publish()
                     }
-                }
-                .onReceive(NotificationCenter.default.publisher(
-                    for: AppDelegate.takeNotification)) { _ in
-                    let d = store.quickTake()
-                    UINotificationFeedbackGenerator().notificationOccurred(.success)
-                    Task {
-                        try? await Task.sleep(nanoseconds: 12_000_000_000)
-                        if store.lastQuickAdded?.id == d.id { store.lastQuickAdded = nil }
+                    .onReceive(NotificationCenter.default.publisher(
+                        for: AppDelegate.takeNotification)) { _ in
+                        let d = store.quickTake()
+                        UINotificationFeedbackGenerator().notificationOccurred(.success)
+                        Task {
+                            try? await Task.sleep(nanoseconds: 12_000_000_000)
+                            if store.lastQuickAdded?.id == d.id { store.lastQuickAdded = nil }
+                        }
                     }
-                }
+            } else {
+                Color.black.ignoresSafeArea()
+            }
         }
         .onChange(of: phase) { _, new in
+            guard let store = launch.store else { return }
             // iCloud 钥匙串没有变更回调，只能在回到前台这个时机对齐
             if new == .active {
                 store.sync()

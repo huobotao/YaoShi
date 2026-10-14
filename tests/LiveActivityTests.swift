@@ -4,7 +4,7 @@ import Foundation
 // xcrun --sdk iphonesimulator swiftc -parse-as-library -target arm64-apple-ios17.0-simulator \
 //   -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" Sources/Models.swift Sources/Sync.swift \
 //   Sources/DoseEngine.swift Sources/DoseCurveModel.swift Sources/SharedStore.swift \
-//   Sources/LiveActivity.swift Sources/DoseActivity.swift tests/LiveActivityTests.swift \
+//   Sources/LiveActivity.swift Sources/DoseActivity.swift Sources/LiveActivityPush.swift Tests/LiveActivityTests.swift \
 //   -o /tmp/yaoshi-live-activity-tests
 // xcrun simctl spawn <booted-iPhone-UDID> /tmp/yaoshi-live-activity-tests
 @main @MainActor struct LiveActivityTests {
@@ -32,6 +32,51 @@ import Foundation
         snapshot.plasmaHalfLifeTenthHoursOverride = 145
         snapshot.updatedAt = now
 
+        var gate = LiveActivityRegistrationGate()
+        let sig = Data([1]), token = Data([2])
+        let firstJob = gate.begin(activity: "a", fingerprint: sig, token: token)!
+        check(gate.begin(activity: "a", fingerprint: sig, token: token) == nil, "identical maintain preserves pending retry instead of starving it")
+        let rotatedJob = gate.begin(activity: "a", fingerprint: sig, token: Data([3]))!
+        check(rotatedJob != firstJob, "token rotation supersedes pending registration")
+        check(!gate.finish(activity: "a", jobID: firstJob), "cancelled old completion cannot clear replacement")
+        check(gate.jobID(for: "a") == rotatedJob, "replacement remains pending after obsolete completion")
+        let changedJob = gate.begin(activity: "a", fingerprint: Data([4]), token: Data([3]))!
+        check(changedJob != rotatedJob, "changed model supersedes pending registration")
+        gate.cancel(activity: "a")
+        check(gate.jobID(for: "a") == nil, "withdraw cancels local registration immediately")
+        let retryJob = gate.begin(activity: "a", fingerprint: sig, token: token)!
+        check(gate.finish(activity: "a", jobID: retryJob), "completed attempt releases pending identity")
+        check(gate.begin(activity: "a", fingerprint: sig, token: token) != nil, "failed bounded attempt allows later identical retry")
+        let midnight = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: now))!
+        let beforeMidnight = midnight.addingTimeInterval(-30)
+        let eveningDose = Dose(at: midnight.addingTimeInterval(-hour), mg: 50)
+        var midnightSnapshot = SharedSnapshot(status: DoseStatus.compute(doses: [eveningDose], now: beforeMidnight), targetAt: nil)
+        midnightSnapshot.recentDoses = [DoseTick(at: eveningDose.at, mg: eveningDose.mg, food: eveningDose.food)]
+        midnightSnapshot.updatedAt = beforeMidnight
+        midnightSnapshot.skippedToday = true
+        let overnight = LiveActivityPush.buildSchedule(snapshot: midnightSnapshot, started: beforeMidnight)
+        check(overnight[0].contentState.skippedToday, "skip flag remains valid on snapshot day")
+        check(!overnight[1].contentState.skippedToday, "skip flag resets at local midnight in background schedule")
+        check(overnight[0].contentState.takenToday == 1 && overnight[1].contentState.takenToday == 0, "daily dose count resets at midnight")
+        check(close(overnight[1].contentState.concentrationRatio, DoseEngine.totalPlasma([eveningDose], at: midnight, curve: midnightSnapshot.plasmaCurve)), "midnight preserves residual concentration")
+        let validConfig = LiveActivityPushConfiguration(endpoint: URL(string: "https://relay.example.test")!, authorizationToken: "synthetic", environment: "sandbox")
+        check(validConfig.isUsable(provisionedEnvironment: "development"), "matching signed development profile allows push setup")
+        check(!validConfig.isUsable(provisionedEnvironment: nil), "missing push entitlement never requests token")
+        check(!validConfig.isUsable(provisionedEnvironment: "production"), "environment mismatch blocks token setup")
+        let plaintextConfig = LiveActivityPushConfiguration(endpoint: URL(string: "http://relay.example.test")!, authorizationToken: "synthetic", environment: "sandbox")
+        check(!plaintextConfig.isUsable(provisionedEnvironment: "development"), "plaintext relay rejected")
+        let schedule = LiveActivityPush.buildSchedule(snapshot: snapshot, started: now)
+        check(schedule.count == 960, "relay covers eight hours at thirty-second intervals")
+        for index in [0, 119, 959] {
+            let entry = schedule[index]
+            let at = Date(timeIntervalSince1970: Double(entry.at))
+            check(close(entry.contentState.concentrationRatio, DoseEngine.totalPlasma(doses, at: at, curve: snapshot.plasmaCurve)), "scheduled value agrees with local model at slot \(index)")
+            check(entry.staleAt > entry.at && entry.staleAt <= entry.at + 120, "delivery jitter expires within two minutes or next boundary")
+            check(entry.contentState.refreshedAt == at, "estimate timestamp matches its computation time")
+        }
+        let encodedEntry = try JSONEncoder().encode(schedule[0])
+        let roundTrip = try JSONDecoder().decode(LiveActivityPush.Entry.self, from: encodedEntry)
+        check(roundTrip.contentState == schedule[0].contentState, "relay JSON preserves ActivityKit Codable dates and values")
         let state = DoseActivityController.state(from: snapshot, now: now)
         let chart = DoseCurveModel(doses: doses, now: now, curve: snapshot.plasmaCurve)
         check((state.concentrationRatio ?? 0) > 1, "stacked plasma is not clamped to one")
