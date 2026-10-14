@@ -7,7 +7,7 @@ import Foundation
 //   Sources/LiveActivity.swift Sources/DoseActivity.swift tests/LiveActivityTests.swift \
 //   -o /tmp/yaoshi-live-activity-tests
 // xcrun simctl spawn <booted-iPhone-UDID> /tmp/yaoshi-live-activity-tests
-@main struct LiveActivityTests {
+@main @MainActor struct LiveActivityTests {
     static var passed = 0
 
     static func check(_ condition: @autoclosure () -> Bool, _ label: String) {
@@ -20,7 +20,7 @@ import Foundation
         return abs(actual - expected) < 1e-12
     }
 
-    static func main() throws {
+    static func main() async throws {
         let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
         let hour: TimeInterval = 3600
         let doses = [Dose(at: now.addingTimeInterval(-4 * hour), mg: 80),
@@ -104,6 +104,38 @@ import Foundation
               "earlier state transition remains the stale deadline")
         check(DoseActivityController.nextStale(for: oldState, now: now) <= now.addingTimeInterval(60),
               "old content also gets a bounded stale deadline")
+        // Suspend the first system operation so two new requests arrive mid-flight.
+        // A concurrent fire-and-forget implementation would overlap or apply 2 after 3.
+        var operations: [Int] = []
+        var releaseFirst: CheckedContinuation<Void, Never>?
+        var firstStarted: CheckedContinuation<Void, Never>?
+        var activeOperations = 0
+        var maxActiveOperations = 0
+        let queue = DoseActivityWorkQueue<Int> { value in
+            activeOperations += 1
+            maxActiveOperations = max(maxActiveOperations, activeOperations)
+            if value == 1 {
+                await withCheckedContinuation { continuation in
+                    releaseFirst = continuation
+                    firstStarted?.resume()
+                }
+            }
+            operations.append(value)
+            activeOperations -= 1
+        }
+        await withCheckedContinuation { continuation in
+            firstStarted = continuation
+            queue.submit(1)
+        }
+        queue.submit(2)
+        let completed = queue.submit(3)
+        releaseFirst?.resume()
+        await completed.value
+        check(operations == [1, 3], "pending refreshes coalesce to the newest state")
+        check(maxActiveOperations == 1, "system operations never overlap")
+        await queue.submit(4).value
+        check(operations == [1, 3, 4], "worker restarts after draining")
+
         print("PASS: \(passed) live activity checks; state JSON \(encoded.count) bytes")
     }
 }

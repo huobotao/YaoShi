@@ -21,14 +21,19 @@ mkdir -p "$APP"
 SDK=$(xcrun --sdk iphoneos --show-sdk-path)
 echo "SDK: $SDK"
 
+source "$ROOTDIR/scripts/extract_app_intents.sh"
+prepare_app_intents "$BUILD/app-intents" "$SRC"/*.swift "$PARTNER_DIR"/*.swift "$ROOTDIR/Shared/TV/"*.swift
+
 echo "==> 编译主 App"
 xcrun -sdk iphoneos swiftc \
-  -D YAOSHI_APP \
+  -D YAOSHI_APP -module-name 药时 "${YAOSHI_INTENTS_FLAGS[@]}" \
   -target arm64-apple-ios17.0 \
   -sdk "$SDK" \
   -O -whole-module-optimization \
   -o "$APP/药时" \
   "$SRC"/*.swift "$PARTNER_DIR"/*.swift "$ROOTDIR/Shared/TV/"*.swift
+
+extract_app_intents "$APP" 药时 "$SDK" arm64-apple-ios17.0
 
 echo "==> 写 Info.plist"
 cat > "$APP/Info.plist" <<'PLIST'

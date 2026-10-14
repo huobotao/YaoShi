@@ -1,7 +1,36 @@
 import Foundation
 #if canImport(ActivityKit) && !targetEnvironment(macCatalyst)
 import ActivityKit
+import UIKit
 #endif
+
+/// One worker owns all ActivityKit mutations. While it awaits the system, only the
+/// newest pending request is retained; an older update can never finish after a newer one.
+@MainActor
+final class DoseActivityWorkQueue<Input> {
+    private var pending: Input?
+    private var worker: Task<Void, Never>?
+    private let perform: @MainActor (Input) async -> Void
+
+    init(perform: @escaping @MainActor (Input) async -> Void) {
+        self.perform = perform
+    }
+
+    @discardableResult
+    func submit(_ input: Input) -> Task<Void, Never> {
+        pending = input
+        if let worker { return worker }
+        let task = Task { @MainActor in
+            while let input = self.pending {
+                self.pending = nil
+                await self.perform(input)
+            }
+            self.worker = nil
+        }
+        worker = task
+        return task
+    }
+}
 
 /// 常驻实时活动（锁屏 + 灵动岛）的启动、更新与收回。只在主 App 里编译。
 ///
@@ -10,6 +39,7 @@ import ActivityKit
 /// 有活的就更新，没有就重新发起。
 #if canImport(ActivityKit) && !targetEnvironment(macCatalyst)
 @available(iOS 16.2, *)
+@MainActor
 enum DoseActivityController {
 
     static var isSupported: Bool { ActivityAuthorizationInfo().areActivitiesEnabled }
@@ -20,7 +50,7 @@ enum DoseActivityController {
         }
     }
 
-    static func state(from snap: SharedSnapshot, now: Date = Date()) -> DoseAttributes.ContentState {
+    nonisolated static func state(from snap: SharedSnapshot, now: Date = Date()) -> DoseAttributes.ContentState {
         let doses: [Dose]
         if let ticks = snap.recentDoses {
             doses = ticks.map(\.asDose)
@@ -50,7 +80,7 @@ enum DoseActivityController {
     }
 
     /// Trend expires after 60 seconds or at an earlier phase boundary; expiry is not an update.
-    static func nextStale(for st: DoseAttributes.ContentState, now: Date) -> Date {
+    nonisolated static func nextStale(for st: DoseAttributes.ContentState, now: Date) -> Date {
         let cal = Calendar.current
         let tomorrow = cal.startOfDay(for: cal.date(byAdding: .day, value: 1, to: now) ?? now)
         let candidates: [Date?] = [now.addingTimeInterval(60), tomorrow.addingTimeInterval(300),
@@ -58,26 +88,62 @@ enum DoseActivityController {
         return candidates.compactMap { $0 }.filter { $0 > now }.min() ?? tomorrow
     }
 
+    private enum Request {
+        case refresh(SharedSnapshot, allowCreation: Bool)
+        case end
+    }
+
+    private static let work = DoseActivityWorkQueue<Request> { request in
+        await apply(request)
+    }
+
     static func refresh(from snap: SharedSnapshot, settings: SyncedSettings) {
-        guard isSupported else { report("notAuthorized"); return }
+        // Disabling must withdraw existing cards even if authorization was revoked.
         guard settings.liveActivityEnabled else { endAll(); return }
-        let now = Date()
-        let st = state(from: snap, now: now)
-        let content = ActivityContent(state: st, staleDate: nextStale(for: st, now: now))
-        if let a = running {
-            Task { await a.update(content); report("updated") }
-        } else {
-            // 把结束了但还没被系统清掉的旧条目收干净，避免锁屏上出现两条
-            for a in Activity<DoseAttributes>.activities {
-                Task { await a.end(nil, dismissalPolicy: .immediate) }
+        work.submit(.refresh(snap, allowCreation: UIApplication.shared.applicationState == .active))
+    }
+
+    /// A background intent may refresh an existing activity, but must never create one.
+    /// Awaiting the worker keeps the intent alive until the accepted work has completed.
+    static func refreshExisting(from snap: SharedSnapshot, settings: SyncedSettings) async {
+        let request: Request = settings.liveActivityEnabled ? .refresh(snap, allowCreation: false) : .end
+        await work.submit(request).value
+    }
+
+    private static func apply(_ request: Request) async {
+        switch request {
+        case .end:
+            for activity in Activity<DoseAttributes>.activities {
+                await activity.end(nil, dismissalPolicy: .immediate)
             }
-            // 不在前台时 request 会抛错，这里静默忽略，下次进前台再来
-            do {
-                _ = try Activity.request(attributes: DoseAttributes(title: "药时"),
-                                         content: content, pushType: nil)
-                report("started")
-            } catch {
-                report("requestFailed", error: String(describing: error))
+            report("ended")
+        case let .refresh(snap, allowCreation):
+            guard isSupported else { report("notAuthorized"); return }
+            let retained = running
+            // Await removal before either updating or requesting, so repeated refreshes
+            // cannot race with cleanup or create multiple lock-screen cards.
+            for activity in Activity<DoseAttributes>.activities where activity.id != retained?.id {
+                await activity.end(nil, dismissalPolicy: .immediate)
+            }
+            let now = Date()
+            let st = state(from: snap, now: now)
+            let content = ActivityContent(state: st, staleDate: nextStale(for: st, now: now))
+            if let activity = retained,
+               activity.activityState == .active || activity.activityState == .stale {
+                await activity.update(content)
+                report("updated")
+            } else {
+                guard allowCreation, UIApplication.shared.applicationState == .active else {
+                    report("creationDeferredUntilForeground")
+                    return
+                }
+                do {
+                    _ = try Activity.request(attributes: DoseAttributes(title: "药时"),
+                                             content: content, pushType: nil)
+                    report("started")
+                } catch {
+                    report("requestFailed", error: String(describing: error))
+                }
             }
         }
     }
@@ -110,9 +176,7 @@ enum DoseActivityController {
     }
 
     static func endAll() {
-        for a in Activity<DoseAttributes>.activities {
-            Task { await a.end(nil, dismissalPolicy: .immediate) }
-        }
+        work.submit(.end)
     }
 }
 #else
@@ -121,5 +185,6 @@ enum DoseActivityController {
     static var isSupported: Bool { false }
     static func refresh(from snap: SharedSnapshot, settings: SyncedSettings) {}
     static func endAll() {}
+    static func refreshExisting(from snap: SharedSnapshot, settings: SyncedSettings) async {}
 }
 #endif

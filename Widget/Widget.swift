@@ -1,6 +1,7 @@
 import WidgetKit
 import SwiftUI
 import ActivityKit
+import AppIntents
 
 // MARK: - 配色（扩展里独立一份，避免依赖主 App 的 UI 文件）
 
@@ -438,8 +439,18 @@ struct DoseLiveActivity: Widget {
                     Spacer(minLength: 0)
                 }.font(.system(size: 10)).foregroundStyle(W.dim)
             }
-            Text(stale ? "\(Fmt2.hm(st.refreshedAt)) 时估算 · 打开药时刷新" : "1× = 单次 50 mg 模型峰值")
-                .font(.system(size: 9)).foregroundStyle(W.dim)
+            HStack {
+                Text(stale ? "\(Fmt2.hm(st.refreshedAt)) 时估算 · 点右侧刷新" : "1× = 单次 50 mg 模型峰值")
+                    .font(.system(size: 9)).foregroundStyle(W.dim)
+                Spacer(minLength: 4)
+                Button(intent: RefreshDoseActivityIntent()) {
+                    Label("刷新", systemImage: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .buttonStyle(.bordered)
+                .tint(W.teal)
+                .accessibilityLabel("按本机记录刷新浓度估算")
+            }
         }
     }
 

@@ -11,15 +11,25 @@ SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 ARCH=$(uname -m)
 mkdir -p "$APP" "$EXT"
 
+source "$ROOT/scripts/extract_app_intents.sh"
+prepare_app_intents "$BUILD/app-intents" "$SRC"/*.swift "$PARTNER_DIR"/*.swift "$ROOT/Shared/TV/"*.swift
+
 echo "==> 编译主 App（模拟器）"
-xcrun -sdk iphonesimulator swiftc -D YAOSHI_APP -target ${ARCH}-apple-ios17.0-simulator -sdk "$SDK" \
+xcrun -sdk iphonesimulator swiftc -D YAOSHI_APP -module-name 药时 -whole-module-optimization "${YAOSHI_INTENTS_FLAGS[@]}" -target ${ARCH}-apple-ios17.0-simulator -sdk "$SDK" \
   -o "$APP/药时" "$SRC"/*.swift "$PARTNER_DIR"/*.swift "$ROOT/Shared/TV/"*.swift
 
+extract_app_intents "$APP" 药时 "$SDK" "${ARCH}-apple-ios17.0-simulator"
+
+WIDGET_SOURCES=("$WSRC/Widget.swift" "$SRC/Models.swift" "$SRC/SharedStore.swift" "$SRC/DoseEngine.swift" "$SRC/DoseCurveModel.swift" "$SRC/LiveActivity.swift" "$SRC/RefreshLiveActivityIntent.swift")
+prepare_app_intents "$BUILD/widget-intents" "${WIDGET_SOURCES[@]}"
+
 echo "==> 编译 Widget（模拟器）"
-xcrun -sdk iphonesimulator swiftc -target ${ARCH}-apple-ios17.0-simulator -sdk "$SDK" \
+xcrun -sdk iphonesimulator swiftc -module-name YaoShiWidget -whole-module-optimization "${YAOSHI_INTENTS_FLAGS[@]}" -target ${ARCH}-apple-ios17.0-simulator -sdk "$SDK" \
   -application-extension -Xlinker -e -Xlinker _NSExtensionMain \
   -o "$EXT/YaoShiWidget" \
-  "$WSRC/Widget.swift" "$SRC/Models.swift" "$SRC/SharedStore.swift" "$SRC/DoseEngine.swift" "$SRC/DoseCurveModel.swift" "$SRC/LiveActivity.swift"
+  "${WIDGET_SOURCES[@]}"
+
+extract_app_intents "$EXT" YaoShiWidget "$SDK" "${ARCH}-apple-ios17.0-simulator"
 
 python3 - "$APP/Info.plist" <<'PY'
 import plistlib,sys

@@ -14,21 +14,28 @@ SDK=$(xcrun --sdk iphoneos --show-sdk-path)
 [ -d "$APP" ] || { echo "主 App 还没构建，先跑 build.sh"; exit 1; }
 mkdir -p "$EXT"
 
+source "$ROOT/scripts/extract_app_intents.sh"
+WIDGET_SOURCES=("$WSRC/Widget.swift" "$SRC/Models.swift" "$SRC/SharedStore.swift" "$SRC/DoseEngine.swift" "$SRC/DoseCurveModel.swift" "$SRC/LiveActivity.swift" "$SRC/RefreshLiveActivityIntent.swift")
+prepare_app_intents "$BUILD/widget-intents" "${WIDGET_SOURCES[@]}"
+
 echo "==> 编译 Widget extension"
 # ⚠️ 入口必须是系统的 _NSExtensionMain（见 BeiYun 2026-09-06 血泪）：
 # 不带这个入口时扩展进程一启动就在 ExtensionFoundation 处 SIGTRAP，
 # 小组件、锁屏卡、灵动岛全部空白且没有任何界面报错。
 xcrun -sdk iphoneos swiftc \
   -target arm64-apple-ios17.0 -sdk "$SDK" \
+  -module-name YaoShiWidget "${YAOSHI_INTENTS_FLAGS[@]}" \
   -O -whole-module-optimization -application-extension \
   -Xlinker -e -Xlinker _NSExtensionMain \
   -Xlinker -rpath -Xlinker @executable_path/Frameworks \
   -Xlinker -rpath -Xlinker @executable_path/../../Frameworks \
   -F "$SDK/System/Library/Frameworks" \
   -o "$EXT/YaoShiWidget" \
-  "$WSRC/Widget.swift" "$SRC/Models.swift" "$SRC/SharedStore.swift" "$SRC/DoseEngine.swift" "$SRC/DoseCurveModel.swift" "$SRC/LiveActivity.swift"
+  "${WIDGET_SOURCES[@]}"
 
 [ -f "$EXT/YaoShiWidget" ] || { echo "Widget 二进制没生成"; exit 1; }
+
+extract_app_intents "$EXT" YaoShiWidget "$SDK" arm64-apple-ios17.0
 
 echo "==> Widget Info.plist"
 cat > "$EXT/Info.plist" <<'PLIST'
