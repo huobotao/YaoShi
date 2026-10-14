@@ -79,6 +79,7 @@ struct YaoShiPartnerApp: App {
                 .preferredColorScheme(.dark)
                 .tint(.teal)
                 .task {
+                    LocationSharingManager.shared.foreground()
                     await MedicationShareRepository.shared.sync()
                     await PartnerMedicationNotificationPlanner.shared.refreshStatusNotifications(
                         doses: MedicationShareRepository.shared.doses)
@@ -88,7 +89,10 @@ struct YaoShiPartnerApp: App {
                     }
                 }
                 .onChange(of: phase) { _, new in
-                    if new == .active { Task { await MedicationShareRepository.shared.sync() } }
+                    if new == .active {
+                        LocationSharingManager.shared.foreground()
+                        Task { await MedicationShareRepository.shared.sync() }
+                    }
                 }
         }
     }

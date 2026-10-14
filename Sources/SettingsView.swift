@@ -19,6 +19,9 @@ struct SettingsView: View {
                 #endif
                 tvPresentationSection
                 PartnerSharingSettingsSection(app: .yaoShi)
+                Section {
+                    NavigationLink("位置共享") { LocationSharingView() }
+                }
                 storageSection
                 aboutSection
             }

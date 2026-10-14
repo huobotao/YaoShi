@@ -50,6 +50,9 @@ cat > "$APP/Info.plist" <<'PLIST'
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>NSLocalNetworkUsageDescription</key><string>经你确认后，与同一网络的 Apple TV 配对并发送曲线数据。</string>
   <key>NSBonjourServices</key><array><string>_yaoshi-tv-v1._tcp</string></array>
+  <key>NSLocationWhenInUseUsageDescription</key><string>你开启位置共享后，采集本机位置并发送给当前共享空间的伴侣。</string>
+  <key>NSLocationAlwaysAndWhenInUseUsageDescription</key><string>你开启位置共享后，在锁屏或使用其他 App 时继续采集位置并批量发送给伴侣；可随时在位置共享页面停止。</string>
+  <key>UIBackgroundModes</key><array><string>location</string></array>
   <key>LSRequiresIPhoneOS</key><true/>
   <key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
   <key>MinimumOSVersion</key><string>17.0</string>

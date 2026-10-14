@@ -54,6 +54,9 @@ compile_partner_app() {
   -o "$APP/药时伴侣" \
   "$ROOTDIR/Sources/Models.swift" \
   "$ROOTDIR/Sources/PartnerMedication.swift" \
+  "$ROOTDIR/Sources/LocationSharingModel.swift" \
+  "$ROOTDIR/Sources/LocationSharingManager.swift" \
+  "$ROOTDIR/Sources/LocationSharingView.swift" \
   "$ROOTDIR/Sources/YaoShiPartnerApp.swift" \
   "$PARTNER_DIR/PartnerSyncCore.swift" \
   "$PARTNER_DIR/PartnerSharingSettingsView.swift"
@@ -76,6 +79,9 @@ cat > "$APP/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundlePackageType</key><string>APPL</string>
+  <key>NSLocationWhenInUseUsageDescription</key><string>你开启位置共享后，采集本机位置并发送给当前共享空间的伴侣。</string>
+  <key>NSLocationAlwaysAndWhenInUseUsageDescription</key><string>你开启位置共享后，在锁屏或使用其他 App 时继续采集位置并批量发送给伴侣；可随时在位置共享页面停止。</string>
+  <key>UIBackgroundModes</key><array><string>location</string></array>
   <key>LSRequiresIPhoneOS</key><true/>
   <key>MinimumOSVersion</key><string>17.0</string>
   <key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>

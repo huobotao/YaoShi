@@ -103,6 +103,7 @@ struct YaoShiApp: App {
                     .preferredColorScheme(.dark)
                     .tint(YS.teal)
                     .onAppear {
+                        LocationSharingManager.shared.foreground()
                         Notifier.configure()
                         // 自检：只在带 YAOSHI_SELFTEST=1 的调试启动时跑一次，
                         // 用来证明"按一下 → 真的写进磁盘"这条链路是通的。真机日常使用不会触发。
@@ -161,6 +162,7 @@ struct YaoShiApp: App {
             #endif
             // iCloud 钥匙串没有变更回调，只能在回到前台这个时机对齐
             if new == .active {
+                LocationSharingManager.shared.foreground()
                 store.sync()
                 Task { await MedicationShareRepository.shared.sync() }
                 store.publish()

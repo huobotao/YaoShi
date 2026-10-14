@@ -202,6 +202,15 @@ final class MedicationShareRepository: ObservableObject {
         await coordinator.sync(app: .yaoShi)
         guard var journal = coordinator.journals[.yaoShi] else { return }
         for event in journal.incoming.sorted(by: { $0.revision < $1.revision }) {
+            if LocationBatch.matchesPayload(event.payload) {
+                if let batch = try? JSONDecoder().decode(LocationBatch.self, from: event.payload),
+                   LocationSharingManager.shared.receive(batch, author: event.author.rawValue, receivedAt: Date()) {
+                    coordinator.acknowledgeReceived(app: .yaoShi, eventID: event.id)
+                } else {
+                    status = "位置记录无法验证或保存；原数据仍保留"
+                }
+                continue
+            }
             if snapshot.processedEventIDs.contains(event.id) {
                 coordinator.acknowledgeReceived(app: .yaoShi, eventID: event.id)
                 continue
@@ -438,6 +447,10 @@ struct YaoShiPartnerView: View {
                     PartnerSharingControls(app: .yaoShi)
                 } header: {
                     Text("共享状态")
+                }
+
+                Section {
+                    NavigationLink("位置共享") { LocationSharingView() }
                 }
 
                 Section("已分享的服药记录") {
