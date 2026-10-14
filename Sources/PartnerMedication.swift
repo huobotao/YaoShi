@@ -203,6 +203,13 @@ final class MedicationShareRepository: ObservableObject {
         guard var journal = coordinator.journals[.yaoShi] else { return }
         for event in journal.incoming.sorted(by: { $0.revision < $1.revision }) {
             if LocationBatch.matchesPayload(event.payload) {
+                guard let active = coordinator.credentials[.yaoShi],
+                      event.sourceSharingIdentity == active.locationSharingIdentity else {
+                    // A decrypted event retained from a previous space must never
+                    // appear as the new partner's current position.
+                    coordinator.acknowledgeReceived(app: .yaoShi, eventID: event.id)
+                    continue
+                }
                 if let batch = try? JSONDecoder().decode(LocationBatch.self, from: event.payload),
                    LocationSharingManager.shared.receive(batch, author: event.author.rawValue, receivedAt: Date()) {
                     coordinator.acknowledgeReceived(app: .yaoShi, eventID: event.id)

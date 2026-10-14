@@ -112,6 +112,7 @@ final class LocationSharingManager: NSObject, ObservableObject, CLLocationManage
         state.enabled = true
         state.boundSpaceID = credentials.spaceID
         state.boundServer = credentials.baseURL.absoluteString
+        state.boundSharingIdentity = credentials.locationSharingIdentity
         UserDefaults.standard.set(true, forKey: consentKey)
         bootstrapped = true
         guard persist() else { failClosed(); return }
@@ -172,10 +173,11 @@ final class LocationSharingManager: NSObject, ObservableObject, CLLocationManage
 
     private func resetReceivingSpaceIfNeeded() {
         let credentials = PartnerSharingCoordinator.shared.credentials[.yaoShi]
-        guard state.receivedSpaceID != credentials?.spaceID || state.receivedServer != credentials?.baseURL.absoluteString else { return }
+        guard state.receivedSharingIdentity != credentials?.locationSharingIdentity else { return }
         state.receivedBatches.removeAll()
         state.receivedSpaceID = credentials?.spaceID
         state.receivedServer = credentials?.baseURL.absoluteString
+        state.receivedSharingIdentity = credentials?.locationSharingIdentity
         _ = persist()
         publish()
     }
@@ -187,7 +189,7 @@ final class LocationSharingManager: NSObject, ObservableObject, CLLocationManage
 
     private func credentialsStillMatch() -> Bool {
         guard let credentials = PartnerSharingCoordinator.shared.credentials[.yaoShi] else { return false }
-        return state.boundSpaceID == credentials.spaceID && state.boundServer == credentials.baseURL.absoluteString
+        return state.boundSharingIdentity == credentials.locationSharingIdentity
     }
 
     private func resumeIfAuthorized() {

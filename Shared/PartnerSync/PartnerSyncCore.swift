@@ -40,6 +40,13 @@ struct PartnerSpaceCredentials: Codable, Equatable {
     var accessToken: String
     var encryptionKey: Data
     var joinedAt: Date
+
+    /// Binds location queues to this server, space and encryption key, never to a token.
+    var locationSharingIdentity: String {
+        var material = Data("\(app.rawValue)\n\(baseURL.absoluteString)\n\(spaceID)\n".utf8)
+        material.append(encryptionKey)
+        return SHA256.hash(data: material).map { String(format: "%02x", $0) }.joined()
+    }
 }
 
 struct PartnerInvite: Equatable {
@@ -108,16 +115,32 @@ struct PartnerReceivedEvent: Codable, Identifiable, Equatable {
     var createdAt: Date
     var payload: Data
     var notifyPartner: Bool? = nil
+    /// Older journals lack this. Location readers reject those unbound events.
+    var sourceSharingIdentity: String? = nil
 }
 
 struct PartnerSyncJournal: Codable, Equatable {
     var schemaVersion = 1
+    var sharingIdentity: String? = nil
     var lastRevision = 0
     var outbox: [PartnerQueuedEvent] = []
     var incoming: [PartnerReceivedEvent] = []
 }
 
 enum PartnerSyncJournalStore {
+    #if PARTNER_SYNC_TESTING
+    static var testingDirectory: URL?
+    #endif
+
+    private static var directory: URL {
+        #if PARTNER_SYNC_TESTING
+        // Tests must explicitly provide a temporary directory, never user data.
+        guard let testingDirectory else { preconditionFailure("Missing test journal directory") }
+        return testingDirectory
+        #else
+        return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        #endif
+    }
     static func load(app: PartnerApp) throws -> PartnerSyncJournal {
         let file = url(app: app)
         guard FileManager.default.fileExists(atPath: file.path) else { return PartnerSyncJournal() }
@@ -131,9 +154,17 @@ enum PartnerSyncJournalStore {
         try data.write(to: url(app: app), options: [.atomic, .completeFileProtection])
     }
 
+    /// Preserve all pending medication events before a space transition. Archives
+    /// are local-only and never become an outbox for the new space.
+    static func archive(_ journal: PartnerSyncJournal, app: PartnerApp) throws {
+        let destination = url(app: app).deletingLastPathComponent()
+            .appendingPathComponent("partner-\(app.rawValue)-sync-archive-\(UUID().uuidString).json")
+        let data = try JSONEncoder().encode(journal)
+        try data.write(to: destination, options: [.atomic, .completeFileProtection])
+    }
+
     private static func url(app: PartnerApp) -> URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("partner-\(app.rawValue)-sync-journal.json")
+        directory.appendingPathComponent("partner-\(app.rawValue)-sync-journal.json")
     }
 }
 
@@ -370,10 +401,11 @@ final class PartnerSharingCoordinator: ObservableObject {
     @Published private(set) var workingApps: Set<PartnerApp> = []
     @Published private(set) var journals: [PartnerApp: PartnerSyncJournal] = [:]
 
-    private let client = PartnerSyncClient()
+    private let client: PartnerSyncClient
     private var journalLoadErrors: Set<PartnerApp> = []
 
     private init() {
+        client = PartnerSyncClient()
         reloadCredentials()
         for app in [PartnerApp.current] {
             do { journals[app] = try PartnerSyncJournalStore.load(app: app) }
@@ -383,6 +415,20 @@ final class PartnerSharingCoordinator: ObservableObject {
             }
         }
     }
+
+    #if PARTNER_SYNC_TESTING
+    init(testingClient: PartnerSyncClient, credentials: [PartnerApp: PartnerSpaceCredentials],
+         journals: [PartnerApp: PartnerSyncJournal]) {
+        self.client = testingClient
+        self.credentials = credentials
+        self.journals = journals
+    }
+
+    func testingSetCredentials(_ value: PartnerSpaceCredentials, prepare: Bool = false) throws {
+        credentials[value.app] = value
+        if prepare { _ = try prepareJournal(app: value.app, credentials: value) }
+    }
+    #endif
 
     func reloadCredentials() {
         for app in [PartnerApp.current] {
@@ -433,8 +479,18 @@ final class PartnerSharingCoordinator: ObservableObject {
         defer { workingApps.remove(invite.app) }
         do {
             let joined = try await client.accept(invite)
+            // Persist the previous identity BEFORE changing Keychain credentials.
+            // A crash between these writes must not migrate the old queue to joined.
+            guard !journalLoadErrors.contains(invite.app) else { return }
+            var oldJournal = try currentJournal(app: invite.app)
+            if oldJournal.sharingIdentity == nil {
+                oldJournal.sharingIdentity = credentials[invite.app]?.locationSharingIdentity ?? "unbound"
+                try PartnerSyncJournalStore.save(oldJournal, app: invite.app)
+                journals[invite.app] = oldJournal
+            }
             try PartnerCredentialVault.save(joined)
             credentials[invite.app] = joined
+            _ = try prepareJournal(app: invite.app, credentials: joined)
             inviteLinks[invite.app] = nil
             status[invite.app] = "已接受邀请；记录共享尚未启用。"
         } catch {
@@ -475,7 +531,17 @@ final class PartnerSharingCoordinator: ObservableObject {
     func enqueue(app: PartnerApp, eventID: UUID, payload: Data,
                  notifyPartner: Bool = false) async -> Bool {
         guard !journalLoadErrors.contains(app) else { return false }
-        var journal = journals[app] ?? (try? PartnerSyncJournalStore.load(app: app)) ?? PartnerSyncJournal()
+        var journal: PartnerSyncJournal
+        do {
+            if let current = credentials[app] {
+                journal = try prepareJournal(app: app, credentials: current)
+            } else {
+                journal = try currentJournal(app: app)
+            }
+        } catch {
+            status[app] = "本机共享队列无法准备：\(error.localizedDescription)"
+            return false
+        }
         guard !journal.outbox.contains(where: { $0.id == eventID }) else {
             if credentials[app] != nil { await sync(app: app) }
             return true
@@ -507,9 +573,13 @@ final class PartnerSharingCoordinator: ObservableObject {
         workingApps.insert(app)
         defer { workingApps.remove(app) }
 
-        var journal = journals[app] ?? (try? PartnerSyncJournalStore.load(app: app)) ?? PartnerSyncJournal()
         do {
+            var journal = try prepareJournal(app: app, credentials: credentials)
             let fetched = try await client.fetch(after: journal.lastRevision, credentials: credentials)
+            guard self.credentials[app] == credentials else { return }
+            // enqueue/acknowledge can run while the network suspends this actor.
+            journal = try currentJournal(app: app)
+            guard journal.sharingIdentity == credentials.locationSharingIdentity else { return }
             var nextRevision = journal.lastRevision
             for event in fetched.sorted(by: { $0.revision < $1.revision }) {
                 let payload = try client.open(event, credentials: credentials)
@@ -517,7 +587,8 @@ final class PartnerSharingCoordinator: ObservableObject {
                     journal.incoming.append(PartnerReceivedEvent(id: event.id, author: event.author,
                                                                  revision: event.revision,
                                                                  createdAt: event.createdAt, payload: payload,
-                                                                 notifyPartner: event.notifyPartner))
+                                                                 notifyPartner: event.notifyPartner,
+                                                                 sourceSharingIdentity: credentials.locationSharingIdentity))
                 }
                 nextRevision = max(nextRevision, event.revision)
             }
@@ -530,6 +601,9 @@ final class PartnerSharingCoordinator: ObservableObject {
                 _ = try await client.append(pending.payload, eventID: pending.id, createdAt: pending.createdAt,
                                             notifyPartner: pending.notifyPartner == true,
                                             credentials: credentials)
+                guard self.credentials[app] == credentials else { return }
+                journal = try currentJournal(app: app)
+                guard journal.sharingIdentity == credentials.locationSharingIdentity else { return }
                 journal.outbox.removeAll { $0.id == pending.id }
                 try PartnerSyncJournalStore.save(journal, app: app)
                 journals[app] = journal
@@ -542,6 +616,27 @@ final class PartnerSharingCoordinator: ObservableObject {
             // Never clear the outbox or incoming journal on a transport error.
             status[app] = "记录已保存在本机；共享服务暂不可用，恢复后会重试（\(error.localizedDescription)）"
         }
+    }
+
+    private func currentJournal(app: PartnerApp) throws -> PartnerSyncJournal {
+        if let journal = journals[app] { return journal }
+        return try PartnerSyncJournalStore.load(app: app)
+    }
+
+    /// Legacy journals bind once to their current credentials. Invite acceptance
+    /// marks them beforehand so a deliberate transition cannot take this path.
+    private func prepareJournal(app: PartnerApp, credentials: PartnerSpaceCredentials) throws -> PartnerSyncJournal {
+        var journal = try currentJournal(app: app)
+        let identity = credentials.locationSharingIdentity
+        if journal.sharingIdentity == identity { return journal }
+        if journal.sharingIdentity != nil {
+            try PartnerSyncJournalStore.archive(journal, app: app)
+            journal = PartnerSyncJournal()
+        }
+        journal.sharingIdentity = identity
+        try PartnerSyncJournalStore.save(journal, app: app)
+        journals[app] = journal
+        return journal
     }
 
     func syncAll() async {

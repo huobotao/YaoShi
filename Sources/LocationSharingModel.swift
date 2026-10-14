@@ -57,9 +57,11 @@ struct LocationSharingState: Codable, Equatable {
     var enabled = false
     var boundSpaceID: String? = nil
     var boundServer: String? = nil
+    var boundSharingIdentity: String? = nil
     var deviceID = UUID()
     var receivedSpaceID: String? = nil
     var receivedServer: String? = nil
+    var receivedSharingIdentity: String? = nil
     var pendingSamples: [LocationSample] = []
     var pendingBatches: [LocationBatch] = []
     var receivedBatches: [LocationReceivedBatch] = []

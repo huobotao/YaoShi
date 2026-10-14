@@ -10,3 +10,7 @@ xcrun swiftc "$ROOT/Sources/LocationSharingModel.swift" \
   "$ROOT/Shared/PartnerSync/PartnerSyncCore.swift" \
   "$ROOT/tests/LocationSharingTransportTests.swift" -o "$TEST_BUILD/transport-tests"
 "$TEST_BUILD/transport-tests"
+xcrun swiftc -D PARTNER_SYNC_TESTING \
+  "$ROOT/Shared/PartnerSync/PartnerSyncCore.swift" \
+  "$ROOT/tests/PartnerSpaceJournalTests.swift" -o "$TEST_BUILD/journal-tests"
+"$TEST_BUILD/journal-tests"
