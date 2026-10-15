@@ -36,3 +36,12 @@ Air R2 及其他现有 iPhone App。手表候选只读显示，不提供表盘�
 `com.richardhuo.yaoshi.archive.v21012r4.watchkitapp`，伴侣目标是已安装在配对 iPhone Air 上的
 `com.richardhuo.yaoshi.archive.v21012r4`。不运行旧 `build_watch.sh`；不构建、安装、启动、停止或
 改变任何 iPhone App，也不覆盖已安装的 R8 Watch App。此候选只读显示，尚未交付表盘组件。
+
+## 健康 R2 手表候选
+
+本分支只通过 `build_watch_health_r2.sh` 生成 `药时手表·健康 R2`（build 53），
+Bundle ID 为 `com.richardhuo.yaoshi.watch.standalone.airr4.healthr2`，其 WidgetKit 扩展为
+同名前缀 `.widget`。旧版手表 App 与全部 iPhone App 均须保留，不运行此树中任何 iPhone
+安装脚本。此版使用独立的 App Group，仅从已核验的只读 Air R4 备份导入记录；不向手机写回。
+心率只读取 HealthKit 已有采样，不启动运动会话。真机授权与表盘槽位显示须单独验收，
+不得把编译、安装或扩展签名成功称为这些行为已经验证。

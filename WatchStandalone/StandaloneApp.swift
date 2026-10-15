@@ -4,6 +4,7 @@ import SwiftUI
 final class StandaloneStore: ObservableObject {
     @Published private(set) var data: StandaloneImport?
     @Published private(set) var error: String?
+    @Published private(set) var complicationReady = false
 
     private var importURL: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -42,10 +43,12 @@ final class StandaloneStore: ObservableObject {
             _ = try readValidated(lastGoodURL)
             data = candidate
             error = nil
+            complicationReady = ComplicationSnapshot.publish(candidate)
         } catch {
             // Never replace an already validated in-memory copy with a bad import.
             if data == nil { data = try? readValidated(lastGoodURL) }
             self.error = data == nil ? "尚无有效数据。请从电脑导入已备份的 Air 记录。" : "新导入文件无效；仍显示上次已核验的数据。"
+            complicationReady = data.map(ComplicationSnapshot.publish) ?? false
         }
     }
 }
@@ -66,6 +69,8 @@ struct YaoShiStandaloneWatchApp: App {
 
 struct StandaloneCurveView: View {
     @EnvironmentObject private var store: StandaloneStore
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var heartRate = HeartRateStore()
 
     var body: some View {
         NavigationStack {
@@ -75,6 +80,7 @@ struct StandaloneCurveView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("独立手表 · 本地估算")
                             .font(.caption2).foregroundStyle(.secondary)
+                        heartRatePanel(now: now)
                         if let data = store.data {
                             let level = StandaloneCurve.level(data, at: now)
                             let last = data.doses.filter { $0.at <= now }.max { $0.at < $1.at }
@@ -100,6 +106,10 @@ struct StandaloneCurveView: View {
                             Text("—").font(.largeTitle).foregroundStyle(.mint)
                         }
                         if let error = store.error { Text(error).font(.caption2).foregroundStyle(.orange) }
+                        if store.data != nil && !store.complicationReady {
+                            Text("表盘数据暂不可用；请在药时手表 App 内核对记录。")
+                                .font(.caption2).foregroundStyle(.orange)
+                        }
                         Text("离线计算；不会向 iPhone 写入记录。仅供记录参考，不是血液检测或用药建议。")
                             .font(.system(size: 10)).foregroundStyle(.secondary)
                         Button("重新读取导入文件") { store.reload() }.font(.caption2)
@@ -109,7 +119,51 @@ struct StandaloneCurveView: View {
                 .background(Color.black)
             }
             .navigationTitle("药时 · 独立")
+            .onAppear { heartRate.refresh() }
+            .onChange(of: scenePhase) { _, next in
+                if next == .active { heartRate.refresh() }
+            }
+            .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+                if scenePhase == .active { heartRate.refresh() }
+            }
         }
+    }
+
+    @ViewBuilder
+    private func heartRatePanel(now: Date) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("心率 · 最近测量")
+                    .font(.caption2).foregroundStyle(.secondary)
+                Spacer(minLength: 3)
+                if let reading = heartRate.latest {
+                    Text("\(reading.bpm) 次/分")
+                        .font(.headline).monospacedDigit().foregroundStyle(.red)
+                } else {
+                    Text("—").font(.headline)
+                }
+            }
+            if let reading = heartRate.latest {
+                Text("测于 \(reading.measuredAt.formatted(.dateTime.hour().minute()))\(now.timeIntervalSince(reading.measuredAt) > 10 * 60 ? " · 超过 10 分钟" : "")")
+                    .font(.system(size: 10))
+                    .foregroundStyle(now.timeIntervalSince(reading.measuredAt) > 10 * 60 ? .orange : .secondary)
+            }
+            Text("近 60 分钟平均：\(heartRate.averageLastHour.map { "\($0) 次/分" } ?? "暂无数据")")
+                .font(.caption2)
+            if !heartRate.message.isEmpty {
+                Text(heartRate.message).font(.system(size: 10)).foregroundStyle(.orange)
+            }
+            HStack(spacing: 8) {
+                Button("允许读取心率") { heartRate.requestAccess() }
+                Button("刷新心率") { heartRate.refresh() }
+            }
+            .font(.system(size: 10))
+            .buttonStyle(.borderless)
+            Text("心率由手表测量，非持续实时值。")
+                .font(.system(size: 10)).foregroundStyle(.secondary)
+        }
+        .padding(6)
+        .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 

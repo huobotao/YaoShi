@@ -1,11 +1,11 @@
 {
-  "variant": "2.10.12-R8",
-  "baseCommit": "423dc26765d67b513221c3f5feccbf7939c00d8c",
-  "baseTag": "v2.10.12-build41",
-  "bundleIdentifier": "com.richardhuo.yaoshi.archive.v21012r8",
-  "displayName": "药时曲线·R8",
-  "purpose": "Independent iPhone 17 Pro retest of R4 curve with retained Core Location background session and lifecycle diagnostics after observed R4 location denial",
-  "dataPolicy": "Isolated keychain namespaces; local backup copy only; no original-app writes",
-  "parentCommit": "1d432e6",
-  "targetDevice": "iPhone 17 Pro only; iPhone Air R4 and R2 remain untouched"
+  "variant": "Watch Health R2, build 53",
+  "baseCommit": "c65636b",
+  "bundleIdentifier": "com.richardhuo.yaoshi.watch.standalone.airr4.healthr2",
+  "widgetBundleIdentifier": "com.richardhuo.yaoshi.watch.standalone.airr4.healthr2.widget",
+  "displayName": "药时手表·健康 R2",
+  "purpose": "Standalone Watch concentration curve, read-only HealthKit heart rate, and WidgetKit face complications",
+  "dataPolicy": "Distinct watch and group containers; manually imported validated local snapshot; no iPhone writes or health data in bundle",
+  "parentCommit": "c65636b",
+  "targetDevice": "Apple Watch Ultra 2 only; all iPhone apps and prior Watch variants remain installed"
 }
