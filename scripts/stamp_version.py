@@ -23,7 +23,7 @@ def identity(component="app"):
         revision, dirty = "unversioned", True
     digest = hashlib.sha256()
     paths = [ROOT / "version.json", *ROOT.glob("build*.sh")]
-    for directory in ("Sources", "Widget", "Watch", "NotificationService", "Shared", "icon", "scripts"):
+    for directory in ("Sources", "Widget", "Watch", "WatchComplication", "NotificationService", "Shared", "icon", "scripts"):
         paths.extend(p for p in (ROOT / directory).rglob("*")
                      if p.is_file() and p.name != ".DS_Store"
                      and "__pycache__" not in p.parts and p.suffix != ".pyc")

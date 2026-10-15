@@ -72,6 +72,20 @@ final class PhoneWatchLink: NSObject, WCSessionDelegate {
                                        latestDose: records.first.map(summary),
                                        recentDoses: records.filter { $0.at >= now.addingTimeInterval(-7 * 86400) }.prefix(100).map(summary),
                                        recentNotes: notes, supportsNotes: true)
+        if !records.isEmpty {
+            let model = DoseCurveModel(doses: store.doses, now: now, curve: store.settings.plasmaCurve)
+            let keyDates = model.visibleDoses.suffix(100).flatMap { dose in
+                [dose.at,
+                 dose.at.addingTimeInterval(model.curve.lag(for: dose.food) * 3600),
+                 dose.at.addingTimeInterval(model.curve.peakTimeHours * 3600)]
+            }
+            let samples = WatchCurveSampling.samples(start: model.start, end: model.end,
+                now: now, keyDates: keyDates, levelAt: model.level(at:))
+            result.curve = WatchCurveSnapshot(start: model.start, end: model.end, now: now,
+                currentLevel: model.currentLevel, upperLevel: model.upperLevel,
+                samples: samples,
+                doses: model.visibleDoses.suffix(100).map { WatchCurveSample(at: $0.at, level: model.level(at: $0.at)) })
+        }
         // Leave room for the reply envelope and ACK. Bound escaped JSON bytes as well as text length.
         while (try? JSONEncoder().encode(result).count).map({ $0 > 56 * 1024 }) ?? true {
             if result.recentDoses.count > 1 { result.recentDoses.removeLast() }

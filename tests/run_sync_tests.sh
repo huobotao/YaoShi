@@ -35,6 +35,12 @@ xcrun swiftc -parse-as-library \
 
 xcrun swiftc -parse-as-library \
   "$ROOT/Sources/Models.swift" "$ROOT/Sources/DoseEngine.swift" "$ROOT/Sources/DoseCurveModel.swift" \
+  "$ROOT/Sources/WatchProtocol.swift" "$ROOT/Sources/WatchCurveSampling.swift" \
+  "$ROOT/tests/WatchCurveSamplingTests.swift" -o "$TEST_BUILD/watch-curve-tests"
+"$TEST_BUILD/watch-curve-tests"
+
+xcrun swiftc -parse-as-library \
+  "$ROOT/Sources/Models.swift" "$ROOT/Sources/DoseEngine.swift" "$ROOT/Sources/DoseCurveModel.swift" \
   "$ROOT/tests/PlasmaTrendTests.swift" -o "$TEST_BUILD/trend-tests"
 "$TEST_BUILD/trend-tests"
 

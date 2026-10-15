@@ -22,7 +22,7 @@ struct YaoShiWatchApp: App {
     @Environment(\.scenePhase) private var phase
     var body: some Scene {
         WindowGroup {
-            WatchDoseView().environmentObject(link)
+            WatchCurveView().environmentObject(link)
                 .tint(.mint)
                 .onAppear { link.setActive(phase == .active) }
                 .onChange(of: phase) { _, phase in link.setActive(phase == .active) }
@@ -47,44 +47,42 @@ struct WatchDoseView: View {
     @State private var noteDraft: WatchNoteDraft?
 
     var body: some View {
-        NavigationStack {
-            TimelineView(.periodic(from: .now, by: 30)) { context in
-                // State-driven redraws can happen between ticks, immediately after saving a note.
-                let now = max(context.date, Date())
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 14) {
-                        Button { noteDraft = WatchNoteDraft() } label: {
-                            Label("添加笔记", systemImage: "square.and.pencil")
-                                .font(.system(size: 16, weight: .semibold))
-                                .frame(maxWidth: .infinity)
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            // State-driven redraws can happen between ticks, immediately after saving a note.
+            let now = max(context.date, Date())
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Button { noteDraft = WatchNoteDraft() } label: {
+                        Label("添加笔记", systemImage: "square.and.pencil")
+                            .font(.system(size: 16, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!link.storageReady || link.state.pendingNotes.count >= 100)
+                    latest(at: now)
+                    Button {
+                        if let settings = link.state.snapshot {
+                            confirmation = .init(mg: settings.defaultMg, med: settings.defaultMed)
                         }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!link.storageReady || link.state.pendingNotes.count >= 100)
-                        latest(at: now)
-                        Button {
-                            if let settings = link.state.snapshot {
-                                confirmation = .init(mg: settings.defaultMg, med: settings.defaultMed)
-                            }
-                        } label: {
-                            Label("记下刚刚服药", systemImage: "checkmark.circle.fill")
-                                .font(.system(size: 15, weight: .semibold))
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!link.storageReady || link.state.snapshot?.allowsRecording != true || link.state.pending.count >= 100)
-                        todayNotes(at: now)
-                        today(at: now)
-                        syncStatus
-                    }.padding(.horizontal, 3).padding(.bottom, 12)
-                }
+                    } label: {
+                        Label("记下刚刚服药", systemImage: "checkmark.circle.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!link.storageReady || link.state.snapshot?.allowsRecording != true || link.state.pending.count >= 100)
+                    todayNotes(at: now)
+                    today(at: now)
+                    syncStatus
+                }.padding(.horizontal, 3).padding(.bottom, 12)
             }
-            .navigationTitle("药时")
-            .sheet(item: $confirmation) { draft in
-                confirmationView(draft)
-            }
-            .sheet(item: $noteDraft) { draft in
-                WatchNoteEditor(draft: draft).environmentObject(link)
-            }
+        }
+        .navigationTitle("药时")
+        .sheet(item: $confirmation) { draft in
+            confirmationView(draft)
+        }
+        .sheet(item: $noteDraft) { draft in
+            WatchNoteEditor(draft: draft).environmentObject(link)
         }
     }
 

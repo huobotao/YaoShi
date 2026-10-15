@@ -56,9 +56,9 @@ struct SharedSnapshot: Codable {
 }
 
 enum SharedStore {
-    private static let service = "com.richardhuo.yaoshi.archive.v21012r6.snapshot"
+    private static let service = "com.richardhuo.yaoshi.archive.v21012r7.snapshot"
     private static let account = "current"
-    private static let group = "P272ZF8FA9.com.richardhuo.yaoshi.archive.v21012r6.shared"
+    private static let group = "P272ZF8FA9.com.richardhuo.yaoshi.archive.v21012r7.shared"
 
     private static func baseQuery() -> [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,

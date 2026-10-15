@@ -2,7 +2,7 @@ import Foundation
 
 /// Shared wire types deliberately have no dependency on the phone's clinical estimates.
 enum YaoShiWatchWire {
-    static let key = "yaoshi.watch.v1"
+    static let key = "yaoshi.watch.r7.v1"
     static let maxBytes = 64 * 1024
     static func encode<T: Encodable>(_ value: T) -> Data? {
         guard let data = try? JSONEncoder().encode(value), data.count <= maxBytes else { return nil }
@@ -65,6 +65,37 @@ struct WatchNoteSummary: Codable, Hashable, Identifiable {
     var note: String
 }
 
+struct WatchCurveSample: Codable, Equatable {
+    var at: Date
+    var level: Double
+}
+
+struct WatchCurveSnapshot: Codable, Equatable {
+    var start: Date
+    var end: Date
+    var now: Date
+    var currentLevel: Double
+    var upperLevel: Double
+    var samples: [WatchCurveSample]
+    var doses: [WatchCurveSample]
+}
+
+enum WatchCurveMath {
+    static func level(in curve: WatchCurveSnapshot, at date: Date) -> Double? {
+        let samples = curve.samples
+        guard let first = samples.first, let last = samples.last,
+              date >= first.at, date <= last.at else { return nil }
+        if date == first.at { return first.level }
+        for (left, right) in zip(samples, samples.dropFirst()) where date >= left.at && date <= right.at {
+            let span = right.at.timeIntervalSince(left.at)
+            guard span > 0 else { continue }
+            let fraction = date.timeIntervalSince(left.at) / span
+            return left.level + (right.level - left.level) * fraction
+        }
+        return last.level
+    }
+}
+
 struct WatchPhoneSnapshot: Codable, Equatable {
     var generatedAt: Date
     var defaultMg: Int
@@ -75,6 +106,7 @@ struct WatchPhoneSnapshot: Codable, Equatable {
     // Optional additions keep the v1 journal and older phone/watch builds readable.
     var recentNotes: [WatchNoteSummary]? = nil
     var supportsNotes: Bool? = nil
+    var curve: WatchCurveSnapshot? = nil
 
     var allowsRecording: Bool { (5...140).contains(defaultMg) && defaultMg % 5 == 0 && defaultMed == "Vyvanse" }
 }

@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import WatchConnectivity
 import WatchKit
+import WidgetKit
 
 @MainActor
 final class YaoShiWatchLink: NSObject, ObservableObject, WCSessionDelegate {
@@ -10,6 +11,7 @@ final class YaoShiWatchLink: NSObject, ObservableObject, WCSessionDelegate {
     @Published private(set) var storageReady = false
     @Published private(set) var issue: String?
     @Published private(set) var reachable = false
+    @Published private(set) var complicationReady = false
     private var journal: WatchJournal?
     private var timer: Timer?
     private var lastInstantSend: [String: Date] = [:]
@@ -20,11 +22,13 @@ final class YaoShiWatchLink: NSObject, ObservableObject, WCSessionDelegate {
         super.init()
         do {
             let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            let file = directory.appendingPathComponent("YaoShi/watch-journal-v1.json")
+            let file = directory.appendingPathComponent("YaoShi-R7/watch-journal-v1.json")
             let journal = try WatchJournal(fileURL: file)
             self.journal = journal
             state = journal.state
             storageReady = true
+            complicationReady = WatchCurveSharedStore.write(state.snapshot)
+            if !complicationReady { issue = "表盘共享数据不可用；手表记录仍安全保存在本机。" }
         } catch { issue = "无法读取手表记录，已暂停新增。请保留 App 并在手机核对。" }
         guard WCSession.isSupported() else { return }
         WCSession.default.delegate = self
@@ -39,6 +43,12 @@ final class YaoShiWatchLink: NSObject, ObservableObject, WCSessionDelegate {
         do {
             try journal.commit(next)
             state = next
+            complicationReady = WatchCurveSharedStore.write(next.snapshot)
+            if complicationReady {
+                WidgetCenter.shared.reloadTimelines(ofKind: WatchCurveSharedStore.complicationKind)
+            } else {
+                issue = "表盘共享数据不可用；手表记录仍安全保存在本机。"
+            }
             return true
         } catch {
             storageReady = false
@@ -56,7 +66,7 @@ final class YaoShiWatchLink: NSObject, ObservableObject, WCSessionDelegate {
         var next = state
         next.enqueue(event)
         guard commit(next) else { return false }
-        issue = nil
+        if complicationReady { issue = nil }
         WKInterfaceDevice.current().play(.success)
         flush()
         return true
@@ -70,7 +80,7 @@ final class YaoShiWatchLink: NSObject, ObservableObject, WCSessionDelegate {
         var next = state
         next.enqueue(event)
         guard commit(next) else { return false }
-        issue = nil
+        if complicationReady { issue = nil }
         WKInterfaceDevice.current().play(.success)
         flush()
         return true
@@ -126,7 +136,7 @@ final class YaoShiWatchLink: NSObject, ObservableObject, WCSessionDelegate {
         next.absorb(reply)
         guard next == state || commit(next) else { return }
         if let error = reply.error { issue = error }
-        else if storageReady { issue = nil }
+        else if storageReady && complicationReady { issue = nil }
         // A confirmed event no longer needs an outstanding background transport copy.
         let acknowledged = Set(reply.acknowledgedIDs.map { "dose:" + $0.uuidString }
                                + (reply.acknowledgedNoteIDs ?? []).map { "note:" + $0.uuidString })
