@@ -22,7 +22,7 @@ info={'CFBundleDevelopmentRegion':'zh_CN','CFBundleDisplayName':'药时手表·�
       'CFBundleIdentifier':wid,'CFBundleInfoDictionaryVersion':'6.0','CFBundlePackageType':'APPL',
       'CFBundleShortVersionString':'2.10.12','CFBundleVersion':'52',
       'MinimumOSVersion':'10.0','UIDeviceFamily':[4],'WKApplication':True,
-      'WKRunsIndependentlyOfCompanionApp':True}
+      'WKRunsIndependentlyOfCompanionApp':True,'WKWatchOnly':True}
 with open(path,'wb') as f: plistlib.dump(info,f,fmt=plistlib.FMT_BINARY)
 PY
 xcrun actool "$ROOT/icon/WatchAssets.xcassets" --compile "$WAPP" --platform watchos \
