@@ -6,8 +6,8 @@ import WidgetKit
 /// A validated, read-only copy for the separate WidgetKit process.
 /// The widget never opens the app's private Documents directory.
 enum ComplicationSnapshot {
-    static let groupID = "group.com.richardhuo.yaoshi.watch.healthr2"
-    static let widgetKind = "YaoShiWatchCurveR2"
+    static let groupID = "group.com.richardhuo.yaoshi.watch.healthr3"
+    static let widgetKind = "YaoShiWatchCurveR3"
     private static let filename = "complication-import-v1.json"
 
     private static var url: URL? {

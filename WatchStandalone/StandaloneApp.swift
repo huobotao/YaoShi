@@ -77,18 +77,21 @@ struct StandaloneCurveView: View {
             TimelineView(.periodic(from: .now, by: 30)) { timeline in
                 let now = timeline.date
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("独立手表 · 本地估算")
-                            .font(.caption2).foregroundStyle(.secondary)
-                        heartRatePanel(now: now)
+                    VStack(alignment: .leading, spacing: 7) {
                         if let data = store.data {
                             let level = StandaloneCurve.level(data, at: now)
                             let last = data.doses.filter { $0.at <= now }.max { $0.at < $1.at }
-                            Text(String(format: "%.2f 倍", level))
-                                .font(.system(size: 30, weight: .semibold, design: .rounded))
-                                .monospacedDigit().foregroundStyle(.mint)
+                            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                                Text(String(format: "%.2f 倍", level))
+                                    .font(.system(size: 34, weight: .semibold, design: .rounded))
+                                    .monospacedDigit().foregroundStyle(.mint)
+                                Spacer(minLength: 0)
+                                Text("模型估算")
+                                    .font(.system(size: 10)).foregroundStyle(.secondary)
+                            }
                             CurvePlot(points: StandaloneCurve.points(data, now: now), now: now)
-                                .frame(height: 100)
+                                .frame(height: 78)
+                            heartRatePanel(now: now)
                             if let last {
                                 Text("上次服药：\(last.at.formatted(.dateTime.month().day().hour().minute()))")
                                     .font(.caption2)
@@ -104,6 +107,7 @@ struct StandaloneCurveView: View {
                                 .font(.system(size: 10)).foregroundStyle(.secondary)
                         } else {
                             Text("—").font(.largeTitle).foregroundStyle(.mint)
+                            heartRatePanel(now: now)
                         }
                         if let error = store.error { Text(error).font(.caption2).foregroundStyle(.orange) }
                         if store.data != nil && !store.complicationReady {
@@ -119,9 +123,10 @@ struct StandaloneCurveView: View {
                 .background(Color.black)
             }
             .navigationTitle("药时 · 独立")
-            .onAppear { heartRate.refresh() }
+            .onAppear { heartRate.startObserving() }
             .onChange(of: scenePhase) { _, next in
-                if next == .active { heartRate.refresh() }
+                if next == .active { heartRate.startObserving() }
+                else { heartRate.stopObserving() }
             }
             .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
                 if scenePhase == .active { heartRate.refresh() }
@@ -131,38 +136,43 @@ struct StandaloneCurveView: View {
 
     @ViewBuilder
     private func heartRatePanel(now: Date) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline) {
-                Text("心率 · 最近测量")
-                    .font(.caption2).foregroundStyle(.secondary)
+                Text("♥ 心率")
+                    .font(.caption2.weight(.semibold)).foregroundStyle(.red)
                 Spacer(minLength: 3)
                 if let reading = heartRate.latest {
                     Text("\(reading.bpm) 次/分")
                         .font(.headline).monospacedDigit().foregroundStyle(.red)
                 } else {
-                    Text("—").font(.headline)
+                    Text("暂无读数").font(.caption2).foregroundStyle(.secondary)
                 }
             }
             if let reading = heartRate.latest {
-                Text("测于 \(reading.measuredAt.formatted(.dateTime.hour().minute()))\(now.timeIntervalSince(reading.measuredAt) > 10 * 60 ? " · 超过 10 分钟" : "")")
-                    .font(.system(size: 10))
-                    .foregroundStyle(now.timeIntervalSince(reading.measuredAt) > 10 * 60 ? .orange : .secondary)
+                HStack(spacing: 3) {
+                    Text("测于 \(reading.measuredAt.formatted(.dateTime.hour().minute()))")
+                    if now.timeIntervalSince(reading.measuredAt) > 10 * 60 { Text("· 已超过 10 分钟") }
+                    Spacer(minLength: 0)
+                    if let average = heartRate.averageLastHour { Text("近 1 小时均值 \(average)") }
+                }
+                .font(.system(size: 10))
+                .foregroundStyle(now.timeIntervalSince(reading.measuredAt) > 10 * 60 ? .orange : .secondary)
             }
-            Text("近 60 分钟平均：\(heartRate.averageLastHour.map { "\($0) 次/分" } ?? "暂无数据")")
-                .font(.caption2)
             if !heartRate.message.isEmpty {
                 Text(heartRate.message).font(.system(size: 10)).foregroundStyle(.orange)
             }
-            HStack(spacing: 8) {
+            if heartRate.shouldOfferAuthorization {
                 Button("允许读取心率") { heartRate.requestAccess() }
+                    .font(.caption2.weight(.semibold))
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+            } else {
                 Button("刷新心率") { heartRate.refresh() }
+                    .font(.system(size: 10))
+                    .buttonStyle(.borderless)
             }
-            .font(.system(size: 10))
-            .buttonStyle(.borderless)
-            Text("心率由手表测量，非持续实时值。")
-                .font(.system(size: 10)).foregroundStyle(.secondary)
         }
-        .padding(6)
+        .padding(7)
         .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
     }
 }
@@ -189,6 +199,23 @@ private struct CurvePlot: View {
             }
             context.stroke(history, with: .color(.mint), lineWidth: 2)
             context.stroke(future, with: .color(.mint.opacity(0.7)), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+            let nowX = CGFloat(now.timeIntervalSince(first.at) / span) * size.width
+            if nowX >= 0 && nowX <= size.width {
+                let before = points.last { $0.at <= now } ?? first
+                let after = points.first { $0.at >= now } ?? last
+                let fraction = after.at > before.at
+                    ? now.timeIntervalSince(before.at) / after.at.timeIntervalSince(before.at)
+                    : 0
+                let interpolated = before.level + (after.level - before.level) * fraction
+                let nowY = size.height - CGFloat(interpolated / ceiling) * (size.height - 8)
+                var marker = Path()
+                marker.move(to: CGPoint(x: nowX, y: 13))
+                marker.addLine(to: CGPoint(x: nowX, y: size.height))
+                context.stroke(marker, with: .color(.white.opacity(0.55)), style: StrokeStyle(lineWidth: 1, dash: [2, 3]))
+                context.fill(Path(ellipseIn: CGRect(x: nowX - 3.5, y: nowY - 3.5, width: 7, height: 7)), with: .color(.white))
+                let label = context.resolve(Text("现在").font(.system(size: 10)).foregroundColor(.white))
+                context.draw(label, at: CGPoint(x: min(size.width - 16, max(16, nowX)), y: 6))
+            }
         }
     }
 }
