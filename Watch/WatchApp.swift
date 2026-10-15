@@ -22,7 +22,7 @@ struct YaoShiWatchApp: App {
     @Environment(\.scenePhase) private var phase
     var body: some Scene {
         WindowGroup {
-            WatchDoseView().environmentObject(link)
+            WatchCurveView().environmentObject(link)
                 .tint(.mint)
                 .onAppear { link.setActive(phase == .active) }
                 .onChange(of: phase) { _, phase in link.setActive(phase == .active) }
