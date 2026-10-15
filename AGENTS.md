@@ -53,3 +53,11 @@ Bundle ID 为 `com.richardhuo.yaoshi.watch.standalone.airr4.healthr3`，WidgetKi
 只安装至 Apple Watch Ultra 2；保留全部旧版手表及手机 App，不运行任何手机安装脚本。
 R3 优先显示浓度及曲线，心率只读取已有 HealthKit 采样，前台监听新增采样；不会主动触发心率测量。
 源数据仍为独立导入快照，不能声称已与 iPhone Air 自动同步。
+
+## 健康 R4 手表候选
+
+本分支新增 `build_watch_health_r4.sh`，生成独立 `药时手表·健康 R4`（build 55），
+Bundle ID 为 `com.richardhuo.yaoshi.watch.standalone.airr4.healthr4`，WidgetKit 扩展同前缀 `.widget`。
+只安装到 Apple Watch Ultra 2，旧版手表和全部手机 App 保留。
+手表新增 50 mg 服药记录时仅写独立本地日志，允许撤销与后续修正；它不能自动同步到 iPhone Air，
+界面必须明确显示待同步状态，且绝不把待同步记录称为手机已保存。

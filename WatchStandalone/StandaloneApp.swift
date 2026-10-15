@@ -5,6 +5,82 @@ final class StandaloneStore: ObservableObject {
     @Published private(set) var data: StandaloneImport?
     @Published private(set) var error: String?
     @Published private(set) var complicationReady = false
+    @Published private(set) var localDoses: [StandaloneDose] = []
+    @Published private(set) var journalError: String?
+
+    private var journal: DoseJournal?
+
+    init() {
+        do {
+            let opened = try DoseJournal(url: DoseJournal.defaultURL())
+            journal = opened
+            localDoses = opened.activeLocalDoses()
+        } catch {
+            // Never create a replacement journal when an existing one cannot be read.
+            journalError = "手表服药日志无法读取；为保护旧记录，暂不能新增服药。"
+        }
+    }
+
+    var canRecord: Bool { journal != nil }
+    var latestLocalDose: StandaloneDose? { localDoses.max { $0.at < $1.at } }
+    var pendingCount: Int {
+        guard let journal else { return 0 }
+        let imported = data?.doses ?? []
+        return journal.pendingDoses(imported: imported).count
+            + journal.pendingRemovalIDs(imported: imported).count
+    }
+    var displayData: StandaloneImport? {
+        guard let data, let journal else { return data }
+        return StandaloneImport(schema: data.schema,
+                                sourceCapturedAt: data.sourceCapturedAt,
+                                exportedAt: data.exportedAt,
+                                sourceSHA256: data.sourceSHA256,
+                                peakHours: data.peakHours,
+                                halfLifeHours: data.halfLifeHours,
+                                doses: journal.mergedDoses(imported: data.doses))
+    }
+
+    func recordDose(at date: Date) {
+        guard let journal else { return }
+        // Confirmation is required by the view; this also catches a second tap
+        // immediately after dismissing the first confirmation.
+        if let latest = latestLocalDose, abs(date.timeIntervalSince(latest.at)) < 60 {
+            journalError = "刚刚已记录一条服药；如需修改，请先核对下方记录。"
+            return
+        }
+        do {
+            try journal.record(at: date, mg: 50)
+            localDoses = journal.activeLocalDoses()
+            if data != nil { complicationReady = ComplicationSnapshot.publishLocal(journal) }
+            journalError = nil
+        } catch {
+            journalError = "保存失败，未添加服药记录。请稍后重试。"
+        }
+    }
+
+    func removeLocalDose(_ id: UUID) {
+        guard let journal else { return }
+        do {
+            try journal.remove(id)
+            localDoses = journal.activeLocalDoses()
+            if data != nil { complicationReady = ComplicationSnapshot.publishLocal(journal) }
+            journalError = nil
+        } catch {
+            journalError = "撤销失败，原记录仍保留。"
+        }
+    }
+
+    func reviseLocalDose(_ id: UUID, mg: Int) {
+        guard let journal, let old = localDoses.first(where: { $0.id == id }) else { return }
+        do {
+            try journal.revise(id, at: old.at, mg: mg, food: old.food)
+            localDoses = journal.activeLocalDoses()
+            if data != nil { complicationReady = ComplicationSnapshot.publishLocal(journal) }
+            journalError = nil
+        } catch {
+            journalError = "修改剂量失败，原记录仍保留。"
+        }
+    }
 
     private var importURL: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -44,11 +120,13 @@ final class StandaloneStore: ObservableObject {
             data = candidate
             error = nil
             complicationReady = ComplicationSnapshot.publish(candidate)
+            if let journal { complicationReady = ComplicationSnapshot.publishLocal(journal) && complicationReady }
         } catch {
             // Never replace an already validated in-memory copy with a bad import.
             if data == nil { data = try? readValidated(lastGoodURL) }
             self.error = data == nil ? "尚无有效数据。请从电脑导入已备份的 Air 记录。" : "新导入文件无效；仍显示上次已核验的数据。"
             complicationReady = data.map(ComplicationSnapshot.publish) ?? false
+            if let journal { complicationReady = ComplicationSnapshot.publishLocal(journal) && complicationReady }
         }
     }
 }
@@ -71,14 +149,22 @@ struct StandaloneCurveView: View {
     @EnvironmentObject private var store: StandaloneStore
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var heartRate = HeartRateStore()
+    @State private var showingDoseConfirmation = false
+    @State private var confirmationTime = Date()
+    @State private var doseToUndo: UUID?
+    @State private var doseToEdit: UUID?
+    @State private var editedMg = 50
+    @State private var showingDoseEditor = false
 
     var body: some View {
-        NavigationStack {
-            TimelineView(.periodic(from: .now, by: 30)) { timeline in
+        TimelineView(.periodic(from: .now, by: 30)) { timeline in
                 let now = timeline.date
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 7) {
-                        if let data = store.data {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("药时")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        if let data = store.displayData {
                             let level = StandaloneCurve.level(data, at: now)
                             let last = data.doses.filter { $0.at <= now }.max { $0.at < $1.at }
                             HStack(alignment: .firstTextBaseline, spacing: 5) {
@@ -90,7 +176,8 @@ struct StandaloneCurveView: View {
                                     .font(.system(size: 10)).foregroundStyle(.secondary)
                             }
                             CurvePlot(points: StandaloneCurve.points(data, now: now), now: now)
-                                .frame(height: 78)
+                                .frame(height: 60)
+                            doseControls
                             heartRatePanel(now: now)
                             if let last {
                                 Text("上次服药：\(last.at.formatted(.dateTime.month().day().hour().minute()))")
@@ -100,16 +187,18 @@ struct StandaloneCurveView: View {
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(.orange)
                             if now.timeIntervalSince(data.sourceCapturedAt) > 2 * 3600 {
-                                Text("快照超过 2 小时：此后新增服药不会自动出现，请勿当作最新记录。")
+                                Text("手机快照超过 2 小时：手机新增服药不会自动出现；手表本地记录已计入曲线。")
                                     .font(.caption2).foregroundStyle(.orange)
                             }
                             Text("参数：达峰 \(data.peakHours.formatted()) 小时 · 半衰期 \(data.halfLifeHours.formatted()) 小时")
                                 .font(.system(size: 10)).foregroundStyle(.secondary)
                         } else {
                             Text("—").font(.largeTitle).foregroundStyle(.mint)
+                            doseControls
                             heartRatePanel(now: now)
                         }
                         if let error = store.error { Text(error).font(.caption2).foregroundStyle(.orange) }
+                        if let error = store.journalError { Text(error).font(.caption2).foregroundStyle(.red) }
                         if store.data != nil && !store.complicationReady {
                             Text("表盘数据暂不可用；请在药时手表 App 内核对记录。")
                                 .font(.caption2).foregroundStyle(.orange)
@@ -122,7 +211,6 @@ struct StandaloneCurveView: View {
                 }
                 .background(Color.black)
             }
-            .navigationTitle("药时 · 独立")
             .onAppear { heartRate.startObserving() }
             .onChange(of: scenePhase) { _, next in
                 if next == .active { heartRate.startObserving() }
@@ -130,6 +218,81 @@ struct StandaloneCurveView: View {
             }
             .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
                 if scenePhase == .active { heartRate.refresh() }
+            }
+            .alert("确认服药", isPresented: $showingDoseConfirmation) {
+                Button("记录已服 50 mg") { store.recordDose(at: confirmationTime) }
+                Button("取消", role: .cancel) { }
+            } message: {
+                Text("Vyvanse 50 mg · \(confirmationTime.formatted(.dateTime.month().day().hour().minute()))。确认后仅保存在这只手表，尚未同步到 iPhone。")
+            }
+            .confirmationDialog("撤销这条手表服药记录？", isPresented: Binding(
+                get: { doseToUndo != nil },
+                set: { if !$0 { doseToUndo = nil } }
+            )) {
+                Button("撤销记录", role: .destructive) {
+                    if let id = doseToUndo { store.removeLocalDose(id) }
+                    doseToUndo = nil
+                }
+                Button("取消", role: .cancel) { doseToUndo = nil }
+            } message: {
+                Text("会从当前曲线中移除；日志仍保留撤销痕迹。不会更改 iPhone 数据。")
+            }
+            .sheet(isPresented: $showingDoseEditor) {
+                VStack(spacing: 8) {
+                    Text("修改手表记录剂量").font(.headline)
+                    Picker("剂量", selection: $editedMg) {
+                        ForEach(Array(stride(from: 5, through: 500, by: 5)), id: \.self) { mg in
+                            Text("\(mg) mg").tag(mg)
+                        }
+                    }
+                    .labelsHidden()
+                    Button("保存修改") {
+                        if let id = doseToEdit { store.reviseLocalDose(id, mg: editedMg) }
+                        showingDoseEditor = false
+                    }
+                    Button("取消") { showingDoseEditor = false }
+                        .buttonStyle(.borderless)
+                }
+                .padding()
+            }
+    }
+
+    private var doseControls: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Button {
+                confirmationTime = Date()
+                showingDoseConfirmation = true
+            } label: {
+                Label("记录已服 50 mg", systemImage: "plus.circle.fill")
+                    .font(.caption.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.mint)
+            .disabled(!store.canRecord)
+
+            if store.pendingCount > 0 {
+                Text("仅手表已保存 · 待同步手机（\(store.pendingCount) 条）")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.orange)
+            }
+            if let latest = store.latestLocalDose {
+                HStack(spacing: 4) {
+                    Text("手表记录：\(latest.at.formatted(.dateTime.month().day().hour().minute())) · \(latest.mg) mg")
+                        .font(.system(size: 10))
+                        .lineLimit(2)
+                    Spacer(minLength: 0)
+                    Button("改剂量") {
+                        doseToEdit = latest.id
+                        editedMg = latest.mg
+                        showingDoseEditor = true
+                    }
+                    .font(.system(size: 10))
+                    .buttonStyle(.borderless)
+                    Button("撤销") { doseToUndo = latest.id }
+                        .font(.system(size: 10))
+                        .buttonStyle(.borderless)
+                }
             }
         }
     }
