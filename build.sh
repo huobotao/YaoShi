@@ -8,7 +8,7 @@ SRC="$ROOTDIR/Sources"
 PARTNER_DIR="$ROOTDIR/Shared/PartnerSync"
 BUILD="${YAOSHI_BUILD_DIR:-/tmp/yaoshi-build}"
 APP="$BUILD/药时.app"
-BUNDLE_ID="com.richardhuo.yaoshi.archive.v21012r4"
+BUNDLE_ID="com.richardhuo.yaoshi.archive.v21012r8"
 PROFILE_DIR="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 IDENTITY="${YAOSHI_SIGNING_IDENTITY:?请设置 YAOSHI_SIGNING_IDENTITY 为本机 Apple Development 签名身份}"
 
@@ -42,10 +42,10 @@ cat > "$APP/Info.plist" <<'PLIST'
 <plist version="1.0">
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
-  <key>CFBundleDisplayName</key><string>药时曲线·R4</string>
+  <key>CFBundleDisplayName</key><string>药时曲线·R8</string>
   <key>CFBundleName</key><string>药时</string>
   <key>CFBundleExecutable</key><string>药时</string>
-  <key>CFBundleIdentifier</key><string>com.richardhuo.yaoshi.archive.v21012r4</string>
+  <key>CFBundleIdentifier</key><string>com.richardhuo.yaoshi.archive.v21012r8</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>NSLocalNetworkUsageDescription</key><string>经你确认后，与同一网络的 Apple TV 配对并发送曲线数据。</string>
@@ -73,8 +73,8 @@ cat > "$APP/Info.plist" <<'PLIST'
   <key>CFBundleURLTypes</key>
   <array>
     <dict>
-      <key>CFBundleURLName</key><string>com.richardhuo.yaoshi.archive.v21012r4</string>
-      <key>CFBundleURLSchemes</key><array><string>yaoshi-21012r4</string><string>yaoshi-21012r4-partner</string></array>
+      <key>CFBundleURLName</key><string>com.richardhuo.yaoshi.archive.v21012r8</string>
+      <key>CFBundleURLSchemes</key><array><string>yaoshi-21012r8</string><string>yaoshi-21012r8-partner</string></array>
     </dict>
   </array>
   <key>NSSupportsLiveActivities</key><true/>
@@ -126,7 +126,7 @@ security cms -D -i "$APP_PROFILE" > "$BUILD/profile.plist"
 /usr/libexec/PlistBuddy -x -c 'Print :Entitlements' "$BUILD/profile.plist" > "$BUILD/ent.plist"
 plutil -replace application-identifier -string "P272ZF8FA9.$BUNDLE_ID" "$BUILD/ent.plist"
 # 描述文件的通配符表示签名许可，安装包必须声明实际使用的具体共享组。
-plutil -replace keychain-access-groups -json '["P272ZF8FA9.com.richardhuo.yaoshi.archive.v21012r4","P272ZF8FA9.com.richardhuo.yaoshi.archive.v21012r4.shared","P272ZF8FA9.com.richardhuo.yaoshi.archive.v21012r4.partner.owner"]' "$BUILD/ent.plist"
+plutil -replace keychain-access-groups -json '["P272ZF8FA9.com.richardhuo.yaoshi.archive.v21012r8","P272ZF8FA9.com.richardhuo.yaoshi.archive.v21012r8.shared","P272ZF8FA9.com.richardhuo.yaoshi.archive.v21012r8.partner.owner"]' "$BUILD/ent.plist"
 
 
 echo "==> 清 xattr 并签名"

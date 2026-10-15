@@ -44,10 +44,10 @@ cat > "$EXT/Info.plist" <<'PLIST'
 <plist version="1.0">
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
-  <key>CFBundleDisplayName</key><string>药时曲线·R4</string>
+  <key>CFBundleDisplayName</key><string>药时曲线·R8</string>
   <key>CFBundleName</key><string>YaoShiWidget</string>
   <key>CFBundleExecutable</key><string>YaoShiWidget</string>
-  <key>CFBundleIdentifier</key><string>com.richardhuo.yaoshi.archive.v21012r4.widget</string>
+  <key>CFBundleIdentifier</key><string>com.richardhuo.yaoshi.archive.v21012r8.widget</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundlePackageType</key><string>XPC!</string>
   <key>MinimumOSVersion</key><string>17.0</string>
@@ -65,13 +65,13 @@ python3 "$ROOT/scripts/stamp_version.py" "$EXT/Info.plist" --parent "$APP/Info.p
 
 echo "==> Widget entitlements"
 # An explicit push-enabled app profile cannot sign the widget's different ID.
-WIDGET_PROFILE_ARGS=("P272ZF8FA9.com.richardhuo.yaoshi.archive.v21012r4.widget")
+WIDGET_PROFILE_ARGS=("P272ZF8FA9.com.richardhuo.yaoshi.archive.v21012r8.widget")
 if [ -n "${YAOSHI_WIDGET_PROFILE:-}" ]; then WIDGET_PROFILE_ARGS+=(--profile "$YAOSHI_WIDGET_PROFILE"); fi
 WIDGET_PROFILE=$(python3 "$ROOT/scripts/select_profile.py" "${WIDGET_PROFILE_ARGS[@]}")
 security cms -D -i "$WIDGET_PROFILE" > "$BUILD/profile-widget.plist"
 /usr/libexec/PlistBuddy -x -c 'Print :Entitlements' "$BUILD/profile-widget.plist" > "$BUILD/ent-widget.plist"
-plutil -replace application-identifier -string "P272ZF8FA9.com.richardhuo.yaoshi.archive.v21012r4.widget" "$BUILD/ent-widget.plist"
-plutil -replace keychain-access-groups -json '["P272ZF8FA9.com.richardhuo.yaoshi.archive.v21012r4.widget","P272ZF8FA9.com.richardhuo.yaoshi.archive.v21012r4.shared"]' "$BUILD/ent-widget.plist"
+plutil -replace application-identifier -string "P272ZF8FA9.com.richardhuo.yaoshi.archive.v21012r8.widget" "$BUILD/ent-widget.plist"
+plutil -replace keychain-access-groups -json '["P272ZF8FA9.com.richardhuo.yaoshi.archive.v21012r8.widget","P272ZF8FA9.com.richardhuo.yaoshi.archive.v21012r8.shared"]' "$BUILD/ent-widget.plist"
 cp "$WIDGET_PROFILE" "$EXT/embedded.mobileprovision"
 
 echo "==> 签 Widget"

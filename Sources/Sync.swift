@@ -285,8 +285,8 @@ struct SyncRead {
 }
 
 enum SyncStore {
-    private static let service = "com.richardhuo.yaoshi.archive.v21012r4.sync"
-    private static let group = "P272ZF8FA9.com.richardhuo.yaoshi.archive.v21012r4.shared"
+    private static let service = "com.richardhuo.yaoshi.archive.v21012r8.sync"
+    private static let group = "P272ZF8FA9.com.richardhuo.yaoshi.archive.v21012r8.shared"
     static let sizeLimit = 400_000
 
     // identifierForVendor 绑定本设备，恢复另一部手机的备份也不会共用写入槽。

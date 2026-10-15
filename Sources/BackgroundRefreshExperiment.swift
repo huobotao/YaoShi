@@ -6,7 +6,8 @@ import Combine
 
 /// Default-enabled, local-only background refresh. Location delivery may
 /// keep this process runnable, but neither delivery nor a 30-second cadence is guaranteed.
-/// No coordinate, medication value, identifier or token is retained by this service.
+/// No coordinate, medication value, device identifier or token is retained by this service.
+/// Diagnostic session IDs are random per process and never identify a person or device.
 @MainActor
 final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationManagerDelegate {
     static let shared = BackgroundRefreshExperiment()
@@ -41,6 +42,7 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
     private var publish: (@MainActor () -> Void)?
     private var timer: Timer?
     private var pendingStart = false
+    private var awaitingForegroundRecovery = false
     private let enabledKey = "backgroundRefreshEnabled"
     var isEnabled: Bool { UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true }
     private var locationStarted = false
@@ -48,9 +50,28 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
     private var foregroundPublishes = 0
     private var backgroundPublishes = 0
     private var publishEvents: [[String: Any]] = []
+    private let processSessionID = UUID().uuidString
+    private var runtimeEvents: [[String: Any]] = []
+    private var locationCallbackCount = 0
+    private var lastLocationCallbackAt: TimeInterval?
+    private var lastCallbackDiagnosticUptime: TimeInterval?
+    private var backgroundSession: CLBackgroundActivitySession?
+    private var sessionDiagnosticsTask: Task<Void, Never>?
+    private var sessionDiagnostics: [String: Bool] = [:]
 
     private override init() {
         super.init()
+        // Observe transitions without a timer or background task that could mask suspension.
+        let notifications = NotificationCenter.default
+        for name in [UIApplication.didBecomeActiveNotification,
+                     UIApplication.willResignActiveNotification,
+                     UIApplication.didEnterBackgroundNotification,
+                     UIApplication.willEnterForegroundNotification,
+                     UIApplication.willTerminateNotification,
+                     Notification.Name.NSProcessInfoPowerStateDidChange,
+                     ProcessInfo.thermalStateDidChangeNotification] {
+            notifications.addObserver(self, selector: #selector(runtimeNotification(_:)), name: name, object: nil)
+        }
         // Activation occurs once UIKit is foreground and the publisher is configured.
     }
 
@@ -107,6 +128,7 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
     func start() {
         guard isExperimentBuild else { statusText = "此版本未启用后台刷新"; return }
         UserDefaults.standard.set(true, forKey: enabledKey)
+        awaitingForegroundRecovery = false
         guard !isRunning else { return }
         guard UIApplication.shared.applicationState == .active else {
             statusText = "等待药时回到前台自动开启"
@@ -157,6 +179,7 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
             stopWithStatus("定位服务或权限不可用，后台刷新停止", event: "locationUnavailable")
             return
         }
+        guard !awaitingForegroundRecovery else { return }
         if pendingStart { beginSessionIfForeground() }
         else if isEnabled && !isRunning && !needsSettings && publish != nil && UIApplication.shared.applicationState == .active { start() }
     }
@@ -173,12 +196,14 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
         needsSettings = false
         foregroundPublishes = 0; backgroundPublishes = 0; publishEvents = []
         lastPublishUptime = nil
+        // Retained session addresses eligibility; navigation-level accuracy is unnecessary.
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
         manager.distanceFilter = kCLDistanceFilterNone
         manager.activityType = .other
         manager.pausesLocationUpdatesAutomatically = false
         manager.allowsBackgroundLocationUpdates = true
         manager.showsBackgroundLocationIndicator = true
+        startBackgroundSession()
         manager.startUpdatingLocation()
         statusText = "后台刷新运行中（无时限）；系统可能暂停或降低频率"
         let clock = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
@@ -188,6 +213,50 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
         RunLoop.main.add(clock, forMode: .common)
         record(event: "started")
         publishIfDue(source: "started")
+    }
+
+    private func startBackgroundSession() {
+        guard backgroundSession == nil else { return }
+        sessionDiagnostics = [:]
+        let session = CLBackgroundActivitySession()
+        backgroundSession = session
+        // Retaining a session is intent, not evidence that the system accepted it.
+        // iOS 18+ diagnostics explain why a session may be suspended.
+        if #available(iOS 18.0, *) {
+            sessionDiagnosticsTask = Task { @MainActor [weak self, session] in
+                do {
+                    for try await diagnostic in session.diagnostics {
+                        guard !Task.isCancelled, let self else { return }
+                        self.sessionDiagnostics = [
+                            "authorizationDenied": diagnostic.authorizationDenied,
+                            "authorizationDeniedGlobally": diagnostic.authorizationDeniedGlobally,
+                            "authorizationRestricted": diagnostic.authorizationRestricted,
+                            "insufficientlyInUse": diagnostic.insufficientlyInUse,
+                            "serviceSessionRequired": diagnostic.serviceSessionRequired,
+                            "authorizationRequestInProgress": diagnostic.authorizationRequestInProgress
+                        ]
+                        self.record(event: "backgroundSessionDiagnostic")
+                    }
+                } catch {
+                    guard !Task.isCancelled else { return }
+                    // Do not record error descriptions, which may contain private context.
+                    self?.record(event: "backgroundSessionDiagnosticEnded",
+                                 details: ["errorCode": (error as NSError).code])
+                }
+            }
+        }
+    }
+
+    @objc nonisolated private func runtimeNotification(_ notification: Notification) {
+        let name = notification.name.rawValue
+        Task { @MainActor [weak self] in
+            guard let self, self.isExperimentBuild else { return }
+            self.record(event: "lifecycle", details: ["notification": name])
+            if name == UIApplication.didBecomeActiveNotification.rawValue {
+                self.awaitingForegroundRecovery = false
+                self.ensureLifecycle()
+            }
+        }
     }
 
     private func publishIfDue(source: String) {
@@ -208,6 +277,8 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
 
     private func stopWithStatus(_ status: String, event: String) {
         timer?.invalidate(); timer = nil
+        sessionDiagnosticsTask?.cancel(); sessionDiagnosticsTask = nil
+        backgroundSession?.invalidate(); backgroundSession = nil
         if locationStarted {
             manager.stopUpdatingLocation()
             manager.allowsBackgroundLocationUpdates = false
@@ -224,6 +295,7 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
 
     private func authorizationChanged() {
         authorizationStatus = manager.authorizationStatus
+        record(event: "authorizationChanged")
         needsSettings = !CLLocationManager.locationServicesEnabled() || authorizationStatus == .denied || authorizationStatus == .restricted
         updateAlwaysAuthorizationMessage()
         if isRunning && needsSettings {
@@ -247,19 +319,51 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         // Deliberately ignore every coordinate, without even transferring it into a task.
-        Task { @MainActor [weak self] in self?.publishIfDue(source: "locationCallback") }
+        Task { @MainActor [weak self] in self?.locationReceived() }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         let denied = (error as? CLError)?.code == .denied
-        Task { @MainActor [weak self] in self?.locationFailed(denied: denied) }
+        let code = (error as NSError).code
+        let isCoreLocationError = (error as NSError).domain == kCLErrorDomain
+        Task { @MainActor [weak self] in
+            self?.locationFailed(denied: denied, code: code, isCoreLocationError: isCoreLocationError)
+        }
     }
 
-    private func locationFailed(denied: Bool) {
+    nonisolated func locationManagerDidPauseLocationUpdates(_ manager: CLLocationManager) {
+        Task { @MainActor [weak self] in self?.record(event: "locationUpdatesPaused") }
+    }
+
+    nonisolated func locationManagerDidResumeLocationUpdates(_ manager: CLLocationManager) {
+        Task { @MainActor [weak self] in self?.record(event: "locationUpdatesResumed") }
+    }
+
+    private func locationReceived() {
+        guard isRunning, locationStarted else { return }
+        locationCallbackCount += 1
+        lastLocationCallbackAt = Date().timeIntervalSince1970
+        publishIfDue(source: "locationCallback")
+        // Persist callback health at most every 30 seconds, never every GPS fix.
+        let uptime = ProcessInfo.processInfo.systemUptime
+        if uptime - (lastCallbackDiagnosticUptime ?? -.infinity) >= 30 {
+            lastCallbackDiagnosticUptime = uptime
+            record(event: "locationCallback")
+        }
+    }
+
+    private func locationFailed(denied: Bool, code: Int, isCoreLocationError: Bool) {
+        record(event: "locationError", details: ["errorCode": code, "isCoreLocationError": isCoreLocationError])
         guard isRunning else { return }
         if denied {
-            needsSettings = true
-            stopWithStatus("系统拒绝定位，后台刷新停止", event: "locationDenied")
+            awaitingForegroundRecovery = true
+            authorizationStatus = manager.authorizationStatus
+            needsSettings = !CLLocationManager.locationServicesEnabled() ||
+                authorizationStatus == .denied || authorizationStatus == .restricted
+            // Do not treat a background denial as proof the user revoked permission.
+            // Stop now; recover on the next real foreground activation, never a retry loop.
+            stopWithStatus(needsSettings ? "定位服务或权限不可用，后台刷新停止" :
+                "系统暂停后台定位；下次打开药时后重试", event: "locationDenied")
         } else {
             statusText = "后台刷新运行中，暂未取得定位回调；刷新频率不保证"
             record(event: "locationCallbackUnavailable")
@@ -275,10 +379,29 @@ final class BackgroundRefreshExperiment: NSObject, ObservableObject, CLLocationM
         }
     }
 
-    private func record(event: String) {
+    private func record(event: String, details: [String: Any] = [:]) {
+        var entry = details
+        entry["event"] = event
+        entry["at"] = Date().timeIntervalSince1970
+        entry["applicationState"] = applicationStateName
+        runtimeEvents.append(entry)
+        if runtimeEvents.count > 64 { runtimeEvents.removeFirst(runtimeEvents.count - 64) }
         guard let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
         let diagnostics: [String: Any] = [
             "event": event, "checkedAt": Date().timeIntervalSince1970,
+            "processID": ProcessInfo.processInfo.processIdentifier,
+            "processSessionID": processSessionID,
+            "systemUptime": ProcessInfo.processInfo.systemUptime,
+            "locationStarted": locationStarted,
+            "backgroundSessionRetained": backgroundSession != nil,
+            "backgroundSessionDiagnostics": sessionDiagnostics,
+            "accuracyAuthorizationRawValue": manager.accuracyAuthorization.rawValue,
+            "desiredAccuracy": manager.desiredAccuracy,
+            "lowPowerMode": ProcessInfo.processInfo.isLowPowerModeEnabled,
+            "thermalStateRawValue": ProcessInfo.processInfo.thermalState.rawValue,
+            "locationCallbackCount": locationCallbackCount,
+            "lastLocationCallbackAt": lastLocationCallbackAt.map { $0 as Any } ?? NSNull(),
+            "runtimeEvents": runtimeEvents,
             "isRunning": isRunning, "authorizationRawValue": authorizationStatus.rawValue,
             "applicationState": applicationStateName,
             "foregroundPublishCount": foregroundPublishes, "backgroundPublishCount": backgroundPublishes,
