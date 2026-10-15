@@ -29,3 +29,10 @@ Air 药时12·R2 为用户验收稳定版，禁止修改、重装、启动、终
 Air R2 及其他现有 iPhone App。手表候选只读显示，不提供表盘组件；
 浓度模型暂用已核对的 3.8 小时达峰及 10.5 小时半衰期，并明确标示
 手机后续参数、进食状态或记录变化未同步时数值可能不同。
+
+## Air R4 手表独立候选
+
+本工作树当前只交付 `build_watch_air_r4_only.sh`，Watch App 身份为
+`com.richardhuo.yaoshi.archive.v21012r4.watchkitapp`，伴侣目标是已安装在配对 iPhone Air 上的
+`com.richardhuo.yaoshi.archive.v21012r4`。不运行旧 `build_watch.sh`；不构建、安装、启动、停止或
+改变任何 iPhone App，也不覆盖已安装的 R8 Watch App。此候选只读显示，尚未交付表盘组件。

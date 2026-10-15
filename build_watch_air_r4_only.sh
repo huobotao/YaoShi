@@ -1,9 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-BUILD="${YAOSHI_BUILD_DIR:-/tmp/yaoshi-r8-watch-only}"
-WAPP="$BUILD/YaoShiWatchR8.app"
-PHONE_ID='com.richardhuo.yaoshi.archive.v21012r8'
+BUILD="${YAOSHI_BUILD_DIR:-/tmp/yaoshi-air-r4-watch-only}"
+WAPP="$BUILD/YaoShiWatchAirR4.app"
+PHONE_ID='com.richardhuo.yaoshi.archive.v21012r4'
 WATCH_ID="$PHONE_ID.watchkitapp"
 IDENTITY="${YAOSHI_SIGNING_IDENTITY:?Set YAOSHI_SIGNING_IDENTITY to the Apple Development signing identity}"
 PROFILE=$(python3 "$ROOT/scripts/select_profile.py" "P272ZF8FA9.$WATCH_ID")
@@ -14,12 +14,12 @@ for ARCH in arm64 arm64_32; do
     -parse-as-library -O -whole-module-optimization \
     "$ROOT"/Watch/*.swift "$ROOT/Sources/WatchProtocol.swift" -o "$BUILD/watch-$ARCH"
 done
-lipo -create "$BUILD/watch-arm64" "$BUILD/watch-arm64_32" -output "$WAPP/YaoShiWatchR8"
+lipo -create "$BUILD/watch-arm64" "$BUILD/watch-arm64_32" -output "$WAPP/YaoShiWatchAirR4"
 python3 - "$WAPP/Info.plist" "$WATCH_ID" "$PHONE_ID" <<'PY'
 import plistlib,sys
 path,wid,pid=sys.argv[1:]
-info={'CFBundleDevelopmentRegion':'zh_CN','CFBundleDisplayName':'药时手表·R8',
-      'CFBundleName':'YaoShiWatchR8','CFBundleExecutable':'YaoShiWatchR8',
+info={'CFBundleDevelopmentRegion':'zh_CN','CFBundleDisplayName':'药时手表·Air R4',
+      'CFBundleName':'YaoShiWatchAirR4','CFBundleExecutable':'YaoShiWatchAirR4',
       'CFBundleIdentifier':wid,'CFBundleInfoDictionaryVersion':'6.0','CFBundlePackageType':'APPL',
       'MinimumOSVersion':'10.0','UIDeviceFamily':[4],'WKApplication':True,
       'WKCompanionAppBundleIdentifier':pid,'WKRunsIndependentlyOfCompanionApp':False}

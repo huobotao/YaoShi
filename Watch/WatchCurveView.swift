@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// This Watch-only companion reads R8's existing dose summaries. The current
+/// This Watch-only companion reads the paired Air R4's dose summaries. The current
 /// phone build does not transmit its adjustable curve settings or food state.
 /// Show those limitations beside every estimate instead of implying an exact
 /// match with the iPhone.
@@ -34,7 +34,7 @@ struct WatchCurveView: View {
                             Text("最近服药：\(latest.at.formatted(.dateTime.month().day().hour().minute())) · \(latest.mg) 毫克")
                                 .font(.caption2)
                         } else {
-                            Text("尚未收到服药记录，请在配对手机打开药时曲线·R8。")
+                            Text("尚未收到服药记录，请在配对的 iPhone Air 打开药时曲线·R4。")
                                 .font(.caption2).foregroundStyle(.orange)
                         }
                         if let receivedAt = link.state.snapshot?.generatedAt {

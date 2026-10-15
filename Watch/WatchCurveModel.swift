@@ -1,7 +1,7 @@
 import Foundation
 
-/// A deliberately local estimate from the dose summaries that R8 already
-/// sends through WatchConnectivity. R8 does not send food or curve settings.
+/// A deliberately local estimate from the dose summaries that Air R4 already
+/// sends through WatchConnectivity. R4 does not send food or curve settings.
 enum WatchCurveModel {
     struct Point {
         let at: Date
