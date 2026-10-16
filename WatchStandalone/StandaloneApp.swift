@@ -149,8 +149,7 @@ struct StandaloneCurveView: View {
     @EnvironmentObject private var store: StandaloneStore
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var heartRate = HeartRateStore()
-    @State private var showingDoseConfirmation = false
-    @State private var confirmationTime = Date()
+    @State private var lastLoggedAt: Date?
     @State private var doseToUndo: UUID?
     @State private var doseToEdit: UUID?
     @State private var editedMg = 50
@@ -161,8 +160,8 @@ struct StandaloneCurveView: View {
                 let now = timeline.date
                 ScrollView {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("药时")
-                            .font(.system(size: 12, weight: .semibold))
+                        Text("药时 · 浓度与心率")
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
                         if let data = store.displayData {
                             let level = StandaloneCurve.level(data, at: now)
@@ -175,10 +174,11 @@ struct StandaloneCurveView: View {
                                 Text("模型估算")
                                     .font(.system(size: 10)).foregroundStyle(.secondary)
                             }
+                            heartRateSummary(now: now)
                             CurvePlot(points: StandaloneCurve.points(data, now: now), now: now)
-                                .frame(height: 60)
+                                .frame(height: 53)
                             doseControls
-                            heartRatePanel(now: now)
+                            heartRateControls
                             if let last {
                                 Text("上次服药：\(last.at.formatted(.dateTime.month().day().hour().minute()))")
                                     .font(.caption2)
@@ -194,8 +194,9 @@ struct StandaloneCurveView: View {
                                 .font(.system(size: 10)).foregroundStyle(.secondary)
                         } else {
                             Text("—").font(.largeTitle).foregroundStyle(.mint)
+                            heartRateSummary(now: now)
                             doseControls
-                            heartRatePanel(now: now)
+                            heartRateControls
                         }
                         if let error = store.error { Text(error).font(.caption2).foregroundStyle(.orange) }
                         if let error = store.journalError { Text(error).font(.caption2).foregroundStyle(.red) }
@@ -218,12 +219,6 @@ struct StandaloneCurveView: View {
             }
             .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
                 if scenePhase == .active { heartRate.refresh() }
-            }
-            .alert("确认服药", isPresented: $showingDoseConfirmation) {
-                Button("记录已服 50 mg") { store.recordDose(at: confirmationTime) }
-                Button("取消", role: .cancel) { }
-            } message: {
-                Text("Vyvanse 50 mg · \(confirmationTime.formatted(.dateTime.month().day().hour().minute()))。确认后仅保存在这只手表，尚未同步到 iPhone。")
             }
             .confirmationDialog("撤销这条手表服药记录？", isPresented: Binding(
                 get: { doseToUndo != nil },
@@ -260,16 +255,30 @@ struct StandaloneCurveView: View {
     private var doseControls: some View {
         VStack(alignment: .leading, spacing: 5) {
             Button {
-                confirmationTime = Date()
-                showingDoseConfirmation = true
+                let recordedAt = Date()
+                lastLoggedAt = nil
+                store.recordDose(at: recordedAt)
+                if store.journalError == nil,
+                   let latest = store.latestLocalDose,
+                   abs(latest.at.timeIntervalSince(recordedAt)) < 1 {
+                    lastLoggedAt = recordedAt
+                }
             } label: {
-                Label("记录已服 50 mg", systemImage: "plus.circle.fill")
+                Label("记下这次服药", systemImage: "plus.circle.fill")
                     .font(.caption.weight(.semibold))
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .tint(.mint)
             .disabled(!store.canRecord)
+            if let lastLoggedAt {
+                Text("已记录 · \(lastLoggedAt.formatted(.dateTime.hour().minute())) · 仅保存在手表")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.mint)
+            }
+            Text("一按即保存；默认 50 mg，可在下方改剂量。")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
 
             if store.pendingCount > 0 {
                 Text("仅手表已保存 · 待同步手机（\(store.pendingCount) 条）")
@@ -297,30 +306,74 @@ struct StandaloneCurveView: View {
         }
     }
 
-    @ViewBuilder
-    private func heartRatePanel(now: Date) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("♥ 心率")
-                    .font(.caption2.weight(.semibold)).foregroundStyle(.red)
-                Spacer(minLength: 3)
-                if let reading = heartRate.latest {
-                    Text("\(reading.bpm) 次/分")
-                        .font(.headline).monospacedDigit().foregroundStyle(.red)
-                } else {
-                    Text("暂无读数").font(.caption2).foregroundStyle(.secondary)
-                }
-            }
+    private func heartRateSummary(now: Date) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Text("♥")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.red)
             if let reading = heartRate.latest {
-                HStack(spacing: 3) {
-                    Text("测于 \(reading.measuredAt.formatted(.dateTime.hour().minute()))")
-                    if now.timeIntervalSince(reading.measuredAt) > 10 * 60 { Text("· 已超过 10 分钟") }
-                    Spacer(minLength: 0)
-                    if let average = heartRate.averageLastHour { Text("近 1 小时均值 \(average)") }
-                }
-                .font(.system(size: 10))
-                .foregroundStyle(now.timeIntervalSince(reading.measuredAt) > 10 * 60 ? .orange : .secondary)
+                Text("\(reading.bpm)")
+                    .font(.system(size: 25, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.red)
+                Text("次/分")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                Text(ageLabel(for: reading.measuredAt, now: now))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(now.timeIntervalSince(reading.measuredAt) > 10 * 60 ? .orange : .secondary)
+                    .lineLimit(1)
+            } else {
+                Text("暂无心率记录")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
             }
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func ageLabel(for measuredAt: Date, now: Date) -> String {
+        let age = max(0, now.timeIntervalSince(measuredAt))
+        if age < 60 { return "\(Int(age)) 秒前测得" }
+        if age < 3600 { return "\(Int(age / 60)) 分前测得" }
+        if age < 86400 { return "\(Int(age / 3600)) 小时前测得" }
+        return measuredAt.formatted(.dateTime.month().day().hour().minute())
+    }
+
+    private var heartRateControls: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("心率来自健康记录；抬腕会刷新读取，不能保证此刻测量。")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+            Picker("平均心率范围", selection: Binding(
+                get: { heartRate.selectedAverageWindow },
+                set: { heartRate.selectAverageWindow($0) }
+            )) {
+                ForEach(HeartRateStore.AverageWindow.allCases) { window in
+                    Text(window.label).tag(window)
+                }
+            }
+            .font(.caption2)
+            if let average = heartRate.averageBPM {
+                Text("\(heartRate.selectedAverageWindow.label)平均：\(average) 次/分")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.red)
+            } else if !heartRate.averageMessage.isEmpty {
+                Text(heartRate.averageMessage)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+            if let checkpoint = heartRate.checkpointAt {
+                Text("检查点：\(checkpoint.formatted(.dateTime.month().day().hour().minute()))")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+            Button("从现在设置心率检查点") { heartRate.setCheckpointNow() }
+                .font(.system(size: 10))
+                .buttonStyle(.borderless)
             if !heartRate.message.isEmpty {
                 Text(heartRate.message).font(.system(size: 10)).foregroundStyle(.orange)
             }

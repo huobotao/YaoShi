@@ -1,11 +1,11 @@
 {
-  "variant": "Watch Health R4, build 55",
-  "baseCommit": "fd60945",
-  "bundleIdentifier": "com.richardhuo.yaoshi.watch.standalone.airr4.healthr4",
-  "widgetBundleIdentifier": "com.richardhuo.yaoshi.watch.standalone.airr4.healthr4.widget",
-  "displayName": "药时手表·健康 R4",
-  "purpose": "Curve-first Watch screen, heart-rate display, face complications, and watch-local 50 mg dose journal",
+  "variant": "Watch Health R5, build 56",
+  "baseCommit": "3ebd1e5",
+  "bundleIdentifier": "com.richardhuo.yaoshi.watch.standalone.airr4.healthr5",
+  "widgetBundleIdentifier": "com.richardhuo.yaoshi.watch.standalone.airr4.healthr5.widget",
+  "displayName": "药时手表·健康 R5",
+  "purpose": "Glanceable latest heart rate, selectable average windows and checkpoint, one-tap 50 mg dose journal, concentration curve and face complications",
   "dataPolicy": "Distinct watch and group containers; validated imported snapshot plus separate append-only watch journal; no iPhone writes or health data in bundle",
-  "parentCommit": "fd60945",
+  "parentCommit": "3ebd1e5",
   "targetDevice": "Apple Watch Ultra 2 only; all iPhone apps and prior Watch variants remain installed"
 }

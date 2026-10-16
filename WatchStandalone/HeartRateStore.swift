@@ -10,16 +10,79 @@ final class HeartRateStore: ObservableObject {
         let measuredAt: Date
     }
 
+    enum AverageWindow: String, CaseIterable, Identifiable {
+        case hour1, hour3, hour6, hour12, hour24, sinceCheckpoint
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .hour1: return "近 1 小时"
+            case .hour3: return "近 3 小时"
+            case .hour6: return "近 6 小时"
+            case .hour12: return "近 12 小时"
+            case .hour24: return "近 24 小时"
+            case .sinceCheckpoint: return "自检查点"
+            }
+        }
+
+        var duration: TimeInterval? {
+            switch self {
+            case .hour1: return 3600
+            case .hour3: return 3 * 3600
+            case .hour6: return 6 * 3600
+            case .hour12: return 12 * 3600
+            case .hour24: return 24 * 3600
+            case .sinceCheckpoint: return nil
+            }
+        }
+    }
+
     @Published private(set) var latest: Reading?
-    @Published private(set) var averageLastHour: Int?
+    @Published private(set) var selectedAverageWindow: AverageWindow
+    @Published private(set) var checkpointAt: Date?
+    @Published private(set) var averageBPM: Int?
+    @Published private(set) var averageMessage = ""
     @Published private(set) var message = "点按授权后读取心率"
     @Published private(set) var isLoading = false
     @Published private(set) var shouldOfferAuthorization = true
+
+    /// Compatibility with the previous screen until its selector is wired.
+    var averageLastHour: Int? {
+        selectedAverageWindow == .hour1 ? averageBPM : nil
+    }
+
+    private enum DefaultsKey {
+        static let averageWindow = "heartRate.averageWindow.v1"
+        static let checkpoint = "heartRate.checkpoint.v1"
+    }
 
     private let healthStore = HKHealthStore()
     private let heartRate = HKObjectType.quantityType(forIdentifier: .heartRate)!
     private let beatsPerMinute = HKUnit.count().unitDivided(by: .minute())
     private var observerQuery: HKObserverQuery?
+    private var refreshGeneration = 0
+
+    init() {
+        let saved = UserDefaults.standard.string(forKey: DefaultsKey.averageWindow)
+        selectedAverageWindow = AverageWindow(rawValue: saved ?? "") ?? .hour1
+        checkpointAt = UserDefaults.standard.object(forKey: DefaultsKey.checkpoint) as? Date
+    }
+
+    func selectAverageWindow(_ window: AverageWindow) {
+        guard selectedAverageWindow != window else { return }
+        selectedAverageWindow = window
+        UserDefaults.standard.set(window.rawValue, forKey: DefaultsKey.averageWindow)
+        refresh()
+    }
+
+    /// A manual timestamp only. It does not assert that an event happened then.
+    func setCheckpointNow() {
+        let now = Date()
+        checkpointAt = now
+        UserDefaults.standard.set(now, forKey: DefaultsKey.checkpoint)
+        if selectedAverageWindow == .sinceCheckpoint { refresh() }
+    }
 
     /// Observe samples while the app is visible; this does not make the watch
     /// take measurements or request HealthKit background delivery.
@@ -66,17 +129,20 @@ final class HeartRateStore: ObservableObject {
             shouldOfferAuthorization = false
             return
         }
+        refreshGeneration &+= 1
+        let generation = refreshGeneration
         isLoading = true
+        averageBPM = nil
+        averageMessage = ""
         let end = Date()
-        let start = end.addingTimeInterval(-3600)
-        let recentHour = HKQuery.predicateForSamples(withStart: start, end: end)
+        let start = selectedAverageWindow.duration.map { end.addingTimeInterval(-$0) } ?? checkpointAt
         let latestQuery = HKSampleQuery(sampleType: heartRate,
                                         predicate: nil,
                                         limit: 1,
                                         sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)]) { [weak self] _, samples, error in
             let sample = (samples as? [HKQuantitySample])?.first
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, self.refreshGeneration == generation else { return }
                 if error != nil {
                     self.latest = nil
                     self.message = "暂时无法读取心率，请检查健康权限后重试"
@@ -94,17 +160,36 @@ final class HeartRateStore: ObservableObject {
                 self.isLoading = false
             }
         }
+        healthStore.execute(latestQuery)
+
+        guard let start else {
+            averageBPM = nil
+            averageMessage = "先设置检查点，再查看此后的平均心率"
+            return
+        }
+        guard start < end else {
+            averageBPM = nil
+            averageMessage = "检查点刚设置，尚无可读心率记录"
+            return
+        }
+        let interval = HKQuery.predicateForSamples(withStart: start, end: end)
         let averageQuery = HKStatisticsQuery(quantityType: heartRate,
-                                             quantitySamplePredicate: recentHour,
-                                             options: .discreteAverage) { [weak self] _, statistics, _ in
+                                             quantitySamplePredicate: interval,
+                                             options: .discreteAverage) { [weak self] _, statistics, error in
             Task { @MainActor in
-                guard let self else { return }
-                self.averageLastHour = statistics?.averageQuantity().map {
+                guard let self, self.refreshGeneration == generation else { return }
+                self.averageBPM = statistics?.averageQuantity().map {
                     Int($0.doubleValue(for: self.beatsPerMinute).rounded())
+                }
+                if error != nil {
+                    self.averageMessage = "暂时无法读取平均心率"
+                } else if self.averageBPM == nil {
+                    self.averageMessage = "所选时间段没有可读心率记录"
+                } else {
+                    self.averageMessage = ""
                 }
             }
         }
-        healthStore.execute(latestQuery)
         healthStore.execute(averageQuery)
     }
 }

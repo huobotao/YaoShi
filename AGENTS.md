@@ -61,3 +61,11 @@ Bundle ID 为 `com.richardhuo.yaoshi.watch.standalone.airr4.healthr4`，WidgetKi
 只安装到 Apple Watch Ultra 2，旧版手表和全部手机 App 保留。
 手表新增 50 mg 服药记录时仅写独立本地日志，允许撤销与后续修正；它不能自动同步到 iPhone Air，
 界面必须明确显示待同步状态，且绝不把待同步记录称为手机已保存。
+
+## 健康 R5 手表候选
+
+本分支新增 `build_watch_health_r5.sh`，生成独立 `药时手表·健康 R5`（build 56），
+Bundle ID 为 `com.richardhuo.yaoshi.watch.standalone.airr4.healthr5`，WidgetKit 扩展同前缀 `.widget`。
+只安装到 Apple Watch Ultra 2；保留旧版手表与全部手机 App。R5 一按即保存默认 50 mg，
+仅在本地日志持久化成功后显示“已记录”；后续可修正或撤销。心率读取显示样本时间，
+平均时段和手动检查点仅作用于此独立 Watch App。仍不可宣称服药或心率已同步到 iPhone 药时。
