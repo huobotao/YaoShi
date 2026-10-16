@@ -47,11 +47,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ app: UIApplication, open url: URL,
                      options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
         guard !LiveActivityReadback.requested else { return false }
-        if url.scheme == "yaoshi-21012r4-partner" {
+        if url.scheme == "yaoshi-21012heartr1-partner" {
             Task { @MainActor in await PartnerSharingCoordinator.shared.acceptInvite(url) }
             return true
         }
-        guard url.scheme == "yaoshi-21012r4" else { return false }
+        guard url.scheme == "yaoshi-21012heartr1" else { return false }
         let action = url.host ?? url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         if action == "take" {
             NotificationCenter.default.post(name: Self.takeNotification, object: nil)
@@ -87,7 +87,9 @@ struct YaoShiApp: App {
             if !ids.isEmpty { _ = store.correctLegacy40mgDoses(ids: ids) }
         }
         _launch = StateObject(wrappedValue: YaoShiLaunchContext(store: store))
-        PhoneWatchLink.shared.start(store: store)
+        if Bundle.main.object(forInfoDictionaryKey: "YaoShiHeartCandidateNoWatchLink") as? Bool != true {
+            PhoneWatchLink.shared.start(store: store)
+        }
         #if os(iOS) && !targetEnvironment(macCatalyst)
         if Bundle.main.object(forInfoDictionaryKey: "YaoShiBackgroundLocationExperiment") as? Bool == true {
             BackgroundRefreshExperiment.shared.configure { [weak store] in store?.publish() }
@@ -164,7 +166,9 @@ struct YaoShiApp: App {
                 store.sync()
                 Task { await MedicationShareRepository.shared.sync() }
                 store.publish()
-                PhoneWatchLink.shared.publishSnapshot()
+                if Bundle.main.object(forInfoDictionaryKey: "YaoShiHeartCandidateNoWatchLink") as? Bool != true {
+                    PhoneWatchLink.shared.publishSnapshot()
+                }
                 Notifier.reschedule(store)
             }
         }

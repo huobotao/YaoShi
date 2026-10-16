@@ -2,6 +2,8 @@ import SwiftUI
 
 struct TodayView: View {
     @EnvironmentObject var store: Store
+    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var heartRate = HeartRateStore()
     @State private var showDetail = false
     @State private var showCurveAnalysis = false
     @State private var showStackPreview = false
@@ -24,7 +26,7 @@ struct TodayView: View {
                 }
             }
             .background(YS.bg.ignoresSafeArea())
-            .navigationTitle("药时 2.10.12 · 曲线 R4")
+            .navigationTitle("药时 2.10.13 · 心率 R1")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -52,11 +54,15 @@ struct TodayView: View {
             DoseCurveAnalysisView().environmentObject(store)
         }
         .onAppear {
+            heartRate.refresh()
             #if targetEnvironment(simulator)
             if ProcessInfo.processInfo.environment["YAOSHI_PREVIEW_NOTE"] == "1", editingNote == nil {
                 editingNote = EffectLog(at: Date())
             }
             #endif
+        }
+        .onChange(of: scenePhase) { _, next in
+            if next == .active { heartRate.refresh() }
         }
     }
 
@@ -67,6 +73,7 @@ struct TodayView: View {
             HStack(alignment: .top, spacing: 18) {
                 VStack(spacing: 14) {
                     gapCard
+                    heartRateCard
                     DoseWindowCard()
                     quickButton
                     if let d = store.lastQuickAdded { justAddedBar(d) }
@@ -86,6 +93,7 @@ struct TodayView: View {
         } else {
             VStack(spacing: 14) {
                 gapCard
+                heartRateCard
                 DoseWindowCard()
                 quickButton
                 if let d = store.lastQuickAdded { justAddedBar(d) }
@@ -96,6 +104,56 @@ struct TodayView: View {
                 if !store.storageOK { warningCard }
             }
             .frame(maxWidth: 720)
+        }
+    }
+
+    // MARK: 健康数据中的心率
+
+    private var heartRateCard: some View {
+        Card {
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(alignment: .firstTextBaseline) {
+                    Label("心率 · 最近记录", systemImage: "heart.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(YS.text)
+                    Spacer()
+                    if let bpm = heartRate.latestBPM {
+                        Text("\(bpm) 次/分")
+                            .font(.system(size: 22, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(YS.teal)
+                            .accessibilityIdentifier("latestHeartRate")
+                    } else {
+                        Text("—").foregroundStyle(YS.dim)
+                    }
+                }
+                if let measured = heartRate.latestAt {
+                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                        let age = max(0, Int(context.date.timeIntervalSince(measured) / 60))
+                        Text("测于 \(Fmt.mdhm(measured)) · 距今约 \(age) 分钟")
+                            .font(.system(size: 12))
+                            .foregroundStyle(age > 10 ? YS.amber : YS.dim)
+                    }
+                }
+                if let average = heartRate.hourAverageBPM {
+                    Text("最近 1 小时平均：\(average) 次/分")
+                        .font(.system(size: 12))
+                        .foregroundStyle(YS.dim)
+                }
+                if let message = heartRate.message {
+                    Text(message).font(.system(size: 12)).foregroundStyle(YS.dim)
+                }
+                HStack(spacing: 16) {
+                    Button("允许读取心率") { heartRate.requestAccess() }
+                    Button(heartRate.isLoading ? "读取中…" : "刷新记录") { heartRate.refresh() }
+                        .disabled(heartRate.isLoading)
+                }
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(YS.teal)
+                Text("显示健康 App 已收到的测量；不代表手表正在实时测量。")
+                    .font(.system(size: 11))
+                    .foregroundStyle(YS.dim)
+            }
         }
     }
 

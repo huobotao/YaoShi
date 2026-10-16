@@ -695,7 +695,11 @@ final class Store: ObservableObject {
         s.updatedAt = Date()
         SharedStore.save(s)
         WidgetCenter.shared.reloadTimelines(ofKind: "YaoShiWidget")
-        if #available(iOS 16.2, *) { DoseActivityController.refresh(from: s, settings: settings) }
+        // This parallel HealthKit candidate must not add a second Live Activity
+        // that displaces the user's stable Air medication display.
+        if Bundle.main.object(forInfoDictionaryKey: "YaoShiHeartCandidateNoLiveActivity") as? Bool != true {
+            if #available(iOS 16.2, *) { DoseActivityController.refresh(from: s, settings: settings) }
+        }
         #endif
     }
 

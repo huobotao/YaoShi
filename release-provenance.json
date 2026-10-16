@@ -1,11 +1,11 @@
 {
-  "variant": "2.10.12-R4",
-  "baseCommit": "423dc26765d67b513221c3f5feccbf7939c00d8c",
+  "variant": "iPhone Heart R1, 2.10.13 build 54",
+  "baseCommit": "1d432e6",
   "baseTag": "v2.10.12-build41",
-  "bundleIdentifier": "com.richardhuo.yaoshi.archive.v21012r4",
-  "displayName": "药时曲线·R4",
-  "purpose": "Independent expanded Dynamic Island curve and current-round elapsed time; preserves R2 background behavior",
-  "dataPolicy": "Isolated keychain namespaces; local backup copy only; no original-app writes",
-  "parentCommit": "e8e1eea8d24ea2e50ea19f797c14d1665a74b3b7",
+  "bundleIdentifier": "com.richardhuo.yaoshi.archive.v21012heartr1",
+  "displayName": "药时心率·R1",
+  "purpose": "Read-only iPhone HealthKit heart-rate card alongside the R4 medication curve, with no competing Live Activity",
+  "dataPolicy": "Isolated keychain services/groups and URL scheme; read-only Air backup import into candidate container; no original-app writes",
+  "parentCommit": "1d432e6",
   "targetDevice": "iPhone Air only"
 }

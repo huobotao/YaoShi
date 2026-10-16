@@ -21,3 +21,11 @@
 
 ## 当前交付边界
 Air 药时12·R2 为用户验收稳定版，禁止修改、重装、启动、终止或改变设置。此 R4 分支只允许以独立ID新增安装到 Air，旧版全部保留；后台逻辑以 R2 为基准。17 Pro 当前问题优先处理，R4 先在电脑准备。这覆盖上文三台安装要求。
+
+## iPhone 心率 R1 候选
+
+本工作树只通过 `build_heart_r1.sh` 和 `build_heart_r1_widget.sh` 构建新 App
+`药时心率·R1`（2.10.13 build 54，Bundle ID `com.richardhuo.yaoshi.archive.v21012heartr1`）。
+先在与 Apple Watch 配对的 iPhone Air 验证；旧 Air R4、17 Pro R8 与其他已安装版本均不可替换或改变。
+新候选只读查询 HealthKit 心率，需独立授权；默认关闭后台定位及实时活动，避免干扰稳定版灵动岛。
+服药数据只可从已备份且验证的 Air R4 文件复制到新候选私有容器，不得回写 Air R4。

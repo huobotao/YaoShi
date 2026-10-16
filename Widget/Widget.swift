@@ -118,7 +118,7 @@ struct YaoShiWidgetView: View {
             default:                    small
             }
         }
-        .widgetURL(URL(string: "yaoshi-21012r4://take"))
+        .widgetURL(URL(string: "yaoshi-21012heartr1://take"))
     }
 
     // 主屏小号
@@ -401,7 +401,7 @@ struct DoseLiveActivity: Widget {
                     .font(.system(size: 10, weight: .semibold)).monospacedDigit()
                     .lineLimit(1).minimumScaleFactor(0.5).foregroundStyle(W.teal)
             }
-            .widgetURL(URL(string: "yaoshi-21012r4://dashboard"))
+            .widgetURL(URL(string: "yaoshi-21012heartr1://dashboard"))
             .keylineTint(W.teal)
         }
     }
