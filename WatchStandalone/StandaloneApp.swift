@@ -154,6 +154,16 @@ struct StandaloneCurveView: View {
     @State private var doseToEdit: UUID?
     @State private var editedMg = 50
     @State private var showingDoseEditor = false
+    @State private var crownZoomIndex: Double = 4
+
+    private let crownWindows: [HeartRateStore.HistoryWindow] = [
+        .hour24, .hour12, .hour6, .hour3, .hour2, .hour1, .minutes30, .minutes15
+    ]
+
+    private var selectedChartWindow: HeartRateStore.HistoryWindow {
+        let index = min(crownWindows.count - 1, max(0, Int(crownZoomIndex.rounded())))
+        return crownWindows[index]
+    }
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { timeline in
@@ -163,6 +173,7 @@ struct StandaloneCurveView: View {
                         Text("药时 · 浓度与心率")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
+                        heartRatePanel(now: now)
                         if let data = store.displayData {
                             let level = StandaloneCurve.level(data, at: now)
                             let last = data.doses.filter { $0.at <= now }.max { $0.at < $1.at }
@@ -174,7 +185,6 @@ struct StandaloneCurveView: View {
                                 Text("模型估算")
                                     .font(.system(size: 10)).foregroundStyle(.secondary)
                             }
-                            heartRateSummary(now: now)
                             CurvePlot(points: StandaloneCurve.points(data, now: now), now: now)
                                 .frame(height: 53)
                             doseControls
@@ -194,7 +204,6 @@ struct StandaloneCurveView: View {
                                 .font(.system(size: 10)).foregroundStyle(.secondary)
                         } else {
                             Text("—").font(.largeTitle).foregroundStyle(.mint)
-                            heartRateSummary(now: now)
                             doseControls
                             heartRateControls
                         }
@@ -212,12 +221,22 @@ struct StandaloneCurveView: View {
                 }
                 .background(Color.black)
             }
-            .onAppear { heartRate.startObserving() }
+            .onAppear {
+                heartRate.selectHistoryWindow(selectedChartWindow)
+                heartRate.startObserving()
+            }
             .onChange(of: scenePhase) { _, next in
-                if next == .active { heartRate.startObserving() }
+                if next == .active {
+                    heartRate.selectHistoryWindow(selectedChartWindow)
+                    heartRate.startObserving()
+                }
                 else { heartRate.stopObserving() }
             }
-            .onReceive(Timer.publish(every: 60, on: .main, in: .common).autoconnect()) { _ in
+            .onChange(of: crownZoomIndex) { _, nextIndex in
+                let index = min(crownWindows.count - 1, max(0, Int(nextIndex.rounded())))
+                heartRate.selectHistoryWindow(crownWindows[index])
+            }
+            .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
                 if scenePhase == .active { heartRate.refresh() }
             }
             .confirmationDialog("撤销这条手表服药记录？", isPresented: Binding(
@@ -312,7 +331,7 @@ struct StandaloneCurveView: View {
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(.red)
             if let reading = heartRate.latest {
-                Text("\(reading.bpm)")
+                Text("\(reading.roundedBPM)")
                     .font(.system(size: 25, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(.red)
@@ -322,7 +341,7 @@ struct StandaloneCurveView: View {
                 Spacer(minLength: 0)
                 Text(ageLabel(for: reading.measuredAt, now: now))
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(now.timeIntervalSince(reading.measuredAt) > 10 * 60 ? .orange : .secondary)
+                    .foregroundStyle(now.timeIntervalSince(reading.measuredAt) > 2 * 60 ? .orange : .secondary)
                     .lineLimit(1)
             } else {
                 Text("暂无心率记录")
@@ -335,6 +354,46 @@ struct StandaloneCurveView: View {
         .accessibilityElement(children: .combine)
     }
 
+    private func heartRatePanel(now: Date) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text("最新心率")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 3)
+                Text("\(selectedChartWindow.label) · 转动表冠缩放")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            heartRateSummary(now: now)
+            HeartRateCurvePlot(readings: heartRate.historyReadings,
+                              window: selectedChartWindow,
+                              now: now)
+                .frame(height: 100)
+                .focusable()
+                .digitalCrownRotation($crownZoomIndex,
+                                      from: 0,
+                                      through: Double(crownWindows.count - 1),
+                                      by: 1,
+                                      sensitivity: .medium,
+                                      isContinuous: false,
+                                      isHapticFeedbackEnabled: true)
+            if !heartRate.historyMessage.isEmpty {
+                Text(heartRate.historyMessage)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            Text("显示已保存的心率样本；空白表示没有样本。")
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+        }
+        .padding(7)
+        .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 9))
+    }
+
     private func ageLabel(for measuredAt: Date, now: Date) -> String {
         let age = max(0, now.timeIntervalSince(measuredAt))
         if age < 60 { return "\(Int(age)) 秒前测得" }
@@ -345,7 +404,7 @@ struct StandaloneCurveView: View {
 
     private var heartRateControls: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text("心率来自健康记录；抬腕会刷新读取，不能保证此刻测量。")
+            Text("心率来自 HealthKit 已保存记录；最新值带有采样时间。")
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
             Picker("平均心率范围", selection: Binding(

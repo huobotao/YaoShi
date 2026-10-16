@@ -69,3 +69,12 @@ Bundle ID 为 `com.richardhuo.yaoshi.watch.standalone.airr4.healthr5`，WidgetKi
 只安装到 Apple Watch Ultra 2；保留旧版手表与全部手机 App。R5 一按即保存默认 50 mg，
 仅在本地日志持久化成功后显示“已记录”；后续可修正或撤销。心率读取显示样本时间，
 平均时段和手动检查点仅作用于此独立 Watch App。仍不可宣称服药或心率已同步到 iPhone 药时。
+
+## 健康 R6 手表候选
+
+本分支新增 `build_watch_health_r6.sh`，生成独立 `药时手表·健康 R6`（build 57），
+Bundle ID 为 `com.richardhuo.yaoshi.watch.standalone.airr4.healthr6`，WidgetKit 扩展同前缀 `.widget`，
+App Group 为 `group.com.richardhuo.yaoshi.watch.healthr6`。只面向 Apple Watch Ultra 2，
+保留 R5 和其他已安装版本。抬腕首屏显示 HealthKit 最新已保存心率及采样时间、近期心率折线；
+旋转 Digital Crown 在 15 分钟至 24 小时范围缩放时间轴。只读 HealthKit 采样，不启动第二个运动会话；
+不宣称能读取传感器原始光学波形或保证每次采样实时可见。空白区间表示没有可读样本。

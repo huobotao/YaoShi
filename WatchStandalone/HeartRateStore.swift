@@ -1,13 +1,48 @@
 import Foundation
 import HealthKit
 
-/// Read-only heart-rate data for the watch screen. HealthKit controls sampling;
-/// opening this screen does not start a workout or make measurements continuous.
+/// Reads heart-rate samples already saved by HealthKit. This app does not start
+/// a workout or claim to make the watch measure continuously.
 @MainActor
 final class HeartRateStore: ObservableObject {
-    struct Reading {
-        let bpm: Int
+    struct Reading: Identifiable {
+        let id: UUID
+        let bpm: Double
         let measuredAt: Date
+
+        var roundedBPM: Int { Int(bpm.rounded()) }
+    }
+
+    enum HistoryWindow: Int, CaseIterable, Identifiable {
+        case minutes15, minutes30, hour1, hour2, hour3, hour6, hour12, hour24
+
+        var id: Int { rawValue }
+
+        var duration: TimeInterval {
+            switch self {
+            case .minutes15: return 15 * 60
+            case .minutes30: return 30 * 60
+            case .hour1: return 60 * 60
+            case .hour2: return 2 * 60 * 60
+            case .hour3: return 3 * 60 * 60
+            case .hour6: return 6 * 60 * 60
+            case .hour12: return 12 * 60 * 60
+            case .hour24: return 24 * 60 * 60
+            }
+        }
+
+        var label: String {
+            switch self {
+            case .minutes15: return "15 分"
+            case .minutes30: return "30 分"
+            case .hour1: return "1 小时"
+            case .hour2: return "2 小时"
+            case .hour3: return "3 小时"
+            case .hour6: return "6 小时"
+            case .hour12: return "12 小时"
+            case .hour24: return "24 小时"
+            }
+        }
     }
 
     enum AverageWindow: String, CaseIterable, Identifiable {
@@ -39,10 +74,13 @@ final class HeartRateStore: ObservableObject {
     }
 
     @Published private(set) var latest: Reading?
+    @Published private(set) var historyReadings: [Reading] = []
+    @Published private(set) var selectedHistoryWindow: HistoryWindow = .hour1
     @Published private(set) var selectedAverageWindow: AverageWindow
     @Published private(set) var checkpointAt: Date?
     @Published private(set) var averageBPM: Int?
     @Published private(set) var averageMessage = ""
+    @Published private(set) var historyMessage = ""
     @Published private(set) var message = "点按授权后读取心率"
     @Published private(set) var isLoading = false
     @Published private(set) var shouldOfferAuthorization = true
@@ -67,6 +105,12 @@ final class HeartRateStore: ObservableObject {
         let saved = UserDefaults.standard.string(forKey: DefaultsKey.averageWindow)
         selectedAverageWindow = AverageWindow(rawValue: saved ?? "") ?? .hour1
         checkpointAt = UserDefaults.standard.object(forKey: DefaultsKey.checkpoint) as? Date
+    }
+
+    func selectHistoryWindow(_ window: HistoryWindow) {
+        guard selectedHistoryWindow != window else { return }
+        selectedHistoryWindow = window
+        refresh()
     }
 
     func selectAverageWindow(_ window: AverageWindow) {
@@ -135,7 +179,7 @@ final class HeartRateStore: ObservableObject {
         averageBPM = nil
         averageMessage = ""
         let end = Date()
-        let start = selectedAverageWindow.duration.map { end.addingTimeInterval(-$0) } ?? checkpointAt
+        let historyStart = end.addingTimeInterval(-selectedHistoryWindow.duration)
         let latestQuery = HKSampleQuery(sampleType: heartRate,
                                         predicate: nil,
                                         limit: 1,
@@ -148,7 +192,8 @@ final class HeartRateStore: ObservableObject {
                     self.message = "暂时无法读取心率，请检查健康权限后重试"
                     self.shouldOfferAuthorization = true
                 } else if let sample {
-                    self.latest = Reading(bpm: Int(sample.quantity.doubleValue(for: self.beatsPerMinute).rounded()),
+                    self.latest = Reading(id: sample.uuid,
+                                          bpm: sample.quantity.doubleValue(for: self.beatsPerMinute),
                                           measuredAt: sample.endDate)
                     self.message = ""
                     self.shouldOfferAuthorization = false
@@ -162,6 +207,31 @@ final class HeartRateStore: ObservableObject {
         }
         healthStore.execute(latestQuery)
 
+        let historyPredicate = HKQuery.predicateForSamples(withStart: historyStart, end: end)
+        let bpmUnit = beatsPerMinute
+        let historyQuery = HKSampleQuery(sampleType: heartRate,
+                                         predicate: historyPredicate,
+                                         limit: HKObjectQueryNoLimit,
+                                         sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: true)]) { [weak self] _, samples, error in
+            let readings = (samples as? [HKQuantitySample])?.map {
+                Reading(id: $0.uuid,
+                        bpm: $0.quantity.doubleValue(for: bpmUnit),
+                        measuredAt: $0.endDate)
+            } ?? []
+            Task { @MainActor in
+                guard let self, self.refreshGeneration == generation else { return }
+                if error != nil {
+                    self.historyReadings = []
+                    self.historyMessage = "暂时无法读取这段心率样本"
+                } else {
+                    self.historyReadings = readings
+                    self.historyMessage = readings.isEmpty ? "此范围内没有可读取的心率样本" : ""
+                }
+            }
+        }
+        healthStore.execute(historyQuery)
+
+        let start = selectedAverageWindow.duration.map { end.addingTimeInterval(-$0) } ?? checkpointAt
         guard let start else {
             averageBPM = nil
             averageMessage = "先设置检查点，再查看此后的平均心率"

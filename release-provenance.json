@@ -1,11 +1,11 @@
 {
-  "variant": "Watch Health R5, build 56",
-  "baseCommit": "3ebd1e5",
-  "bundleIdentifier": "com.richardhuo.yaoshi.watch.standalone.airr4.healthr5",
-  "widgetBundleIdentifier": "com.richardhuo.yaoshi.watch.standalone.airr4.healthr5.widget",
-  "displayName": "药时手表·健康 R5",
-  "purpose": "Glanceable latest heart rate, selectable average windows and checkpoint, one-tap 50 mg dose journal, concentration curve and face complications",
-  "dataPolicy": "Distinct watch and group containers; validated imported snapshot plus separate append-only watch journal; no iPhone writes or health data in bundle",
-  "parentCommit": "3ebd1e5",
+  "variant": "Watch Health R6, build 57",
+  "baseCommit": "ab97079",
+  "bundleIdentifier": "com.richardhuo.yaoshi.watch.standalone.airr4.healthr6",
+  "widgetBundleIdentifier": "com.richardhuo.yaoshi.watch.standalone.airr4.healthr6.widget",
+  "appGroupIdentifier": "group.com.richardhuo.yaoshi.watch.healthr6",
+  "displayName": "药时手表·健康 R6",
+  "purpose": "Glanceable latest saved heart-rate sample and timestamp, recent HealthKit heart-rate curve with Digital Crown time-range zoom, selectable average windows and checkpoint, isolated dose journal, concentration curve and face complications",
+  "dataPolicy": "Distinct watch and group containers; read-only HealthKit heart-rate samples; validated imported snapshot plus separate append-only watch journal; no iPhone writes or health data in bundle",
   "targetDevice": "Apple Watch Ultra 2 only; all iPhone apps and prior Watch variants remain installed"
 }
